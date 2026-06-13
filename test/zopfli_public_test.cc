@@ -1,7 +1,8 @@
 #include "zopfli_c_api.h"
 
-#include "gtest/gtest.h"
+#include <algorithm>
 
+#include "gtest/gtest.h"
 namespace {
 
 using zopfli_test::Output;
