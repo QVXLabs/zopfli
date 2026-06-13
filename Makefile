@@ -1,6 +1,26 @@
 CC ?= gcc
 CXX ?= g++
 
+VERSION_MAJOR := 1
+VERSION := $(VERSION_MAJOR).0.5
+
+# Shared-library naming differs by linker. GNU ld uses -soname and
+# libfoo.so.MAJOR.MINOR.PATCH; Apple ld uses -install_name and
+# libfoo.MAJOR.MINOR.PATCH.dylib.
+# $(call shared_lib,foo)    -> versioned output filename
+# $(call shared_soname,foo) -> soname / install_name value
+ifeq ($(shell uname -s),Darwin)
+  SHARED_FLAG := -dynamiclib
+  SONAME_FLAG := -install_name
+  shared_lib = lib$(1).$(VERSION).dylib
+  shared_soname = lib$(1).$(VERSION_MAJOR).dylib
+else
+  SHARED_FLAG := -shared
+  SONAME_FLAG := -soname
+  shared_lib = lib$(1).so.$(VERSION)
+  shared_soname = lib$(1).so.$(VERSION_MAJOR)
+endif
+
 override CFLAGS := -W -Wall -Wextra -ansi -pedantic -lm -O3 -Wno-unused-function -fPIC $(CFLAGS)
 override CXXFLAGS := -W -Wall -Wextra -ansi -pedantic -O3 -fPIC $(CXXFLAGS)
 
@@ -42,7 +62,7 @@ zopfli: $(ZOPFLILIB_OBJ) $(ZOPFLIBIN_OBJ)
 
 # Zopfli shared library
 libzopfli: $(ZOPFLILIB_OBJ)
-	$(CC) $^ $(CFLAGS) -shared -Wl,-soname,libzopfli.so.1 -o libzopfli.so.1.0.3 $(LDFLAGS)
+	$(CC) $^ $(CFLAGS) $(SHARED_FLAG) -Wl,$(SONAME_FLAG),$(call shared_soname,zopfli) -o $(call shared_lib,zopfli) $(LDFLAGS)
 
 # Zopfli static library
 libzopfli.a: $(ZOPFLILIB_OBJ)
@@ -54,7 +74,7 @@ zopflipng: $(ZOPFLILIB_OBJ) $(LODEPNG_OBJ) $(ZOPFLIPNGLIB_OBJ) $(ZOPFLIPNGBIN_OB
 
 # ZopfliPNG shared library
 libzopflipng: $(ZOPFLILIB_OBJ) $(LODEPNG_OBJ) $(ZOPFLIPNGLIB_OBJ)
-	$(CXX) $^ $(CFLAGS) --shared -Wl,-soname,libzopflipng.so.1 -o libzopflipng.so.1.0.3 $(LDFLAGS)
+	$(CXX) $^ $(CFLAGS) $(SHARED_FLAG) -Wl,$(SONAME_FLAG),$(call shared_soname,zopflipng) -o $(call shared_lib,zopflipng) $(LDFLAGS)
 
 # ZopfliPNG static library
 libzopflipng.a: $(LODEPNG_OBJ) $(ZOPFLIPNGLIB_OBJ)

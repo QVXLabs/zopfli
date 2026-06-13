@@ -1,6 +1,9 @@
 cmake_minimum_required(VERSION 3.10)
 
-project(Zopfli)
+project(Zopfli
+  VERSION 1.0.5
+  LANGUAGES C CXX
+)
 
 # Check if Zopfli is the top-level project (standalone), or a subproject
 set(zopfli_standalone FALSE)
@@ -55,10 +58,10 @@ endif()
 #
 # Library version
 #
-set(ZOPFLI_VERSION_MAJOR 1)
-set(ZOPFLI_VERSION_MINOR 0)
-set(ZOPFLI_VERSION_PATCH 3)
-set(ZOPFLI_VERSION ${ZOPFLI_VERSION_MAJOR}.${ZOPFLI_VERSION_MINOR}.${ZOPFLI_VERSION_PATCH})
+set(ZOPFLI_VERSION_MAJOR ${PROJECT_VERSION_MAJOR})
+set(ZOPFLI_VERSION_MINOR ${PROJECT_VERSION_MINOR})
+set(ZOPFLI_VERSION_PATCH ${PROJECT_VERSION_PATCH})
+set(ZOPFLI_VERSION ${PROJECT_VERSION})
 
 if(ZOPFLI_BUILD_SHARED)
   set(zopfli_library_type SHARED)
@@ -96,7 +99,7 @@ set_target_properties(libzopfli PROPERTIES
   SOVERSION ${ZOPFLI_VERSION_MAJOR}
 )
 if(UNIX AND NOT (BEOS OR HAIKU))
-  target_link_libraries(libzopfli m)
+  target_link_libraries(libzopfli PUBLIC m)
 endif()
 
 #
@@ -107,7 +110,7 @@ add_library(libzopflipng ${zopfli_library_type}
   src/zopflipng/lodepng/lodepng.cpp
   src/zopflipng/lodepng/lodepng_util.cpp
 )
-target_link_libraries(libzopflipng libzopfli)
+target_link_libraries(libzopflipng PUBLIC libzopfli)
 target_include_directories(libzopflipng
   INTERFACE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/zopflipng>
@@ -119,22 +122,18 @@ set_target_properties(libzopflipng PROPERTIES
   SOVERSION ${ZOPFLI_VERSION_MAJOR}
 )
 
-# MSVC does not export symbols by default when building a DLL, this is a
-# workaround for recent versions of CMake
+# MSVC does not export symbols by default when building a DLL
 if(MSVC AND ZOPFLI_BUILD_SHARED)
-  if(CMAKE_VERSION VERSION_LESS 3.4)
-    message(WARNING "Automatic export of all symbols to DLL not supported until CMake 3.4")
-  else()
-    set_target_properties(libzopfli PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
-    set_target_properties(libzopflipng PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
-  endif()
+  set_target_properties(libzopfli libzopflipng PROPERTIES
+    WINDOWS_EXPORT_ALL_SYMBOLS ON
+  )
 endif()
 
 #
 # zopfli
 #
 add_executable(zopfli src/zopfli/zopfli_bin.c)
-target_link_libraries(zopfli libzopfli)
+target_link_libraries(zopfli PRIVATE libzopfli)
 if(MSVC)
   target_compile_definitions(zopfli PRIVATE _CRT_SECURE_NO_WARNINGS)
 endif()
@@ -143,7 +142,7 @@ endif()
 # zopflipng
 #
 add_executable(zopflipng src/zopflipng/zopflipng_bin.cc)
-target_link_libraries(zopflipng libzopflipng)
+target_link_libraries(zopflipng PRIVATE libzopflipng)
 if(MSVC)
   target_compile_definitions(zopflipng PRIVATE _CRT_SECURE_NO_WARNINGS)
 endif()
@@ -152,12 +151,10 @@ endif()
 #
 # Makes targets available to projects using Zopfli as a subproject using the
 # same names as in the config file package.
-if(NOT CMAKE_VERSION VERSION_LESS 3.0)
-  add_library(Zopfli::libzopfli ALIAS libzopfli)
-  add_library(Zopfli::libzopflipng ALIAS libzopflipng)
-  add_executable(Zopfli::zopfli ALIAS zopfli)
-  add_executable(Zopfli::zopflipng ALIAS zopflipng)
-endif()
+add_library(Zopfli::libzopfli ALIAS libzopfli)
+add_library(Zopfli::libzopflipng ALIAS libzopflipng)
+add_executable(Zopfli::zopfli ALIAS zopfli)
+add_executable(Zopfli::zopflipng ALIAS zopflipng)
 
 #
 # Install
@@ -178,20 +175,19 @@ if(ZOPFLI_BUILD_INSTALL)
   #
   # This allows CMake based projects to use the installed libraries with
   # find_package(Zopfli).
-  if(NOT CMAKE_VERSION VERSION_LESS 3.0)
-    include(CMakePackageConfigHelpers)
-    write_basic_package_version_file(${CMAKE_CURRENT_BINARY_DIR}/ZopfliConfigVersion.cmake
-      VERSION ${ZOPFLI_VERSION}
-      COMPATIBILITY SameMajorVersion
-    )
-    # Since we have no dependencies, use export file directly as config file
-    install(EXPORT ZopfliTargets
-      DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Zopfli
-      NAMESPACE Zopfli::
-      FILE ZopfliConfig.cmake
-    )
-    install(FILES ${CMAKE_CURRENT_BINARY_DIR}/ZopfliConfigVersion.cmake
-      DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Zopfli
-    )
-  endif()
+  include(CMakePackageConfigHelpers)
+  write_basic_package_version_file(
+    ${CMAKE_CURRENT_BINARY_DIR}/ZopfliConfigVersion.cmake
+    VERSION ${ZOPFLI_VERSION}
+    COMPATIBILITY SameMajorVersion
+  )
+  # Since we have no dependencies, use export file directly as config file
+  install(EXPORT ZopfliTargets
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Zopfli
+    NAMESPACE Zopfli::
+    FILE ZopfliConfig.cmake
+  )
+  install(FILES ${CMAKE_CURRENT_BINARY_DIR}/ZopfliConfigVersion.cmake
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Zopfli
+  )
 endif()
