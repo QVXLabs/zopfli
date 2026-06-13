@@ -39,7 +39,7 @@ jobs:
         run: cmake --build build --config ${{ matrix.build_type }} -j
 
       - name: Test
-        run: ctest --test-dir build --build-config ${{ matrix.build_type }} --output-on-failure
+        run: ./build/zopfli_tests
 
       - name: Makefile build
         run: make

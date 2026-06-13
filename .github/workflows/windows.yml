@@ -27,4 +27,4 @@ jobs:
         run: cmake --build build --config ${{ matrix.build_type }} -j
 
       - name: Test
-        run: ctest --test-dir build --build-config ${{ matrix.build_type }} --output-on-failure
+        run: ./build/${{ matrix.build_type }}/zopfli_tests.exe

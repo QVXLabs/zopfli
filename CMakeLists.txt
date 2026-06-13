@@ -139,7 +139,8 @@ target_link_libraries(zopflipng PRIVATE libzopflipng)
 
 # Silence MSVC warnings on standard C functions like fopen
 if(MSVC)
-  target_compile_definitions(zopfli zopflipng PRIVATE _CRT_SECURE_NO_WARNINGS)
+  target_compile_definitions(zopfli PRIVATE _CRT_SECURE_NO_WARNINGS)
+  target_compile_definitions(zopflipng PRIVATE _CRT_SECURE_NO_WARNINGS)
 endif()
 
 # Create aliases
@@ -154,7 +155,11 @@ add_executable(Zopfli::zopflipng ALIAS zopflipng)
 #
 # Tests
 #
-include(CTest)  # defines BUILD_TESTING, calls enable_testing()
+# Default BUILD_TESTING to ON without include(CTest); the gtest binary is
+# run directly rather than through ctest.
+if(NOT DEFINED BUILD_TESTING)
+  set(BUILD_TESTING ON)
+endif()
 if(BUILD_TESTING)
   # Prefer an installed GoogleTest; fall back to the submodule.
   find_package(GTest QUIET)
@@ -193,10 +198,6 @@ if(BUILD_TESTING)
     CXX_STANDARD_REQUIRED ON
     CXX_EXTENSIONS OFF
   )
-
-  # Register the binary as one CTest test, avoiding gtest_discover_tests()
-  # so it works with any GTest provider (e.g. conan's find_package(GTest)).
-  add_test(NAME zopfli_tests COMMAND zopfli_tests)
 endif()
 
 #
