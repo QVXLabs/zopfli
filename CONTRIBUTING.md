@@ -6,7 +6,7 @@ kinds are welcome — bug reports, fixes, documentation, and new features.
 ## Reporting issues
 
 Before opening an issue, please search the
-[issue tracker](https://github.com/google/zopfli/issues) to check whether it
+[issue tracker](https://github.com/QVXLabs/zopfli/issues) to check whether it
 has already been reported. When filing a new issue, include:
 
 - A clear description of the problem or request.
