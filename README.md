@@ -83,7 +83,7 @@ Useful options (pass with `-D<option>=<value>` at configure time):
 
 - `BUILD_SHARED_LIBS` — build shared instead of static libraries (default `OFF`)
 - `BUILD_TESTING` — build the test suite (default `ON`)
-- `ZOPFLI_BUILD_INSTALL` — add an install target (default `ON` standalone)
+- `ZOPFLI_PIC` — build with position-independent code (default `OFF`)
 - `ZOPFLI_COVERAGE` — build with line-coverage instrumentation (gcc/clang)
 
 ### Make (Linux/macOS)

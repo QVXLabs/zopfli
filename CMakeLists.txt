@@ -2,67 +2,30 @@ cmake_minimum_required(VERSION 3.10)
 
 project(Zopfli VERSION 1.0.5 LANGUAGES C CXX)
 
-# Check if Zopfli is the top-level project (standalone), or a subproject
-set(zopfli_standalone FALSE)
-get_directory_property(zopfli_parent_directory PARENT_DIRECTORY)
-if(zopfli_parent_directory STREQUAL "")
-  set(zopfli_standalone TRUE)
-endif()
-unset(zopfli_parent_directory)
-
 #
 # Options
 #
+# Library type and build config use the standard BUILD_SHARED_LIBS and
+# CMAKE_BUILD_TYPE; set those directly.
 
-# ZOPFLI_BUILD_SHARED controls if Zopfli libraries are built as shared or
-# static
-#
-# It defaults to the value of BUILD_SHARED_LIBS if set, and in most cases
-# that should be used instead. The purpose of ZOPFLI_BUILD_SHARED is to allow
-# overriding it when built as a subproject.
-set(zopfli_shared_default OFF)
-if(DEFINED BUILD_SHARED_LIBS)
-  set(zopfli_shared_default ${BUILD_SHARED_LIBS})
-endif()
-option(ZOPFLI_BUILD_SHARED "Build Zopfli with shared libraries" ${zopfli_shared_default})
-unset(zopfli_shared_default)
-
-# ZOPFLI_BUILD_INSTALL controls if Zopfli adds an install target to the build
-#
-# When built standalone or as a shared library subproject, the default is ON,
-# and for static library subproject the default is OFF.
-if(zopfli_standalone OR ZOPFLI_BUILD_SHARED)
-  option(ZOPFLI_BUILD_INSTALL "Add Zopfli install target" ON)
-else()
-  option(ZOPFLI_BUILD_INSTALL "Add Zopfli install target" OFF)
-endif()
-
-# ZOPFLI_DEFAULT_RELEASE enables changing empty build type to Release
-#
-# Make based single-configuration generators default to an empty build type,
-# which might be surprising, but could be useful if you want full control over
-# compiler and linker flags. When ZOPFLI_DEFAULT_RELEASE is ON, change an
-# empty default build type to Release.
-option(ZOPFLI_DEFAULT_RELEASE "If CMAKE_BUILD_TYPE is empty, default to Release" ON)
+# Force PIC for static libs too (shared libs are PIC regardless).
+option(ZOPFLI_PIC "Build with position-independent code" OFF)
 
 # Line-coverage instrumentation (gcc/clang); use with the test suite.
 option(ZOPFLI_COVERAGE "Build with coverage instrumentation" OFF)
+
+# Default ON; gtest is run directly, so include(CTest) is intentionally unused.
+if(NOT DEFINED BUILD_TESTING)
+  set(BUILD_TESTING ON)
+endif()
+
+# Read at target creation, so they must precede it.
+if(ZOPFLI_PIC)
+  set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+endif()
 if(ZOPFLI_COVERAGE)
   add_compile_options(--coverage -O0 -g)
-  add_link_options(--coverage)
-endif()
-
-if(zopfli_standalone AND ZOPFLI_DEFAULT_RELEASE)
-  if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
-    message(STATUS "CMAKE_BUILD_TYPE empty, defaulting to Release")
-    set(CMAKE_BUILD_TYPE Release)
-  endif()
-endif()
-
-if(ZOPFLI_BUILD_SHARED)
-  set(zopfli_library_type SHARED)
-else()
-  set(zopfli_library_type STATIC)
+  link_libraries(--coverage)
 endif()
 
 include(GNUInstallDirs)
@@ -70,7 +33,7 @@ include(GNUInstallDirs)
 #
 # libzopfli
 #
-add_library(libzopfli ${zopfli_library_type}
+add_library(libzopfli
   src/zopfli/blocksplitter.c
   src/zopfli/cache.c
   src/zopfli/deflate.c
@@ -101,7 +64,7 @@ endif()
 #
 # libzopflipng
 #
-add_library(libzopflipng ${zopfli_library_type}
+add_library(libzopflipng
   src/zopflipng/zopflipng_lib.cc
   src/zopflipng/lodepng/lodepng.cpp
   src/zopflipng/lodepng/lodepng_util.cpp
@@ -119,7 +82,7 @@ set_target_properties(libzopflipng PROPERTIES
 )
 
 # MSVC does not export symbols by default when building a DLL
-if(MSVC AND ZOPFLI_BUILD_SHARED)
+if(MSVC AND BUILD_SHARED_LIBS)
   set_target_properties(libzopfli libzopflipng PROPERTIES
     WINDOWS_EXPORT_ALL_SYMBOLS ON
   )
@@ -155,11 +118,6 @@ add_executable(Zopfli::zopflipng ALIAS zopflipng)
 #
 # Tests
 #
-# Default BUILD_TESTING to ON without include(CTest); the gtest binary is
-# run directly rather than through ctest.
-if(NOT DEFINED BUILD_TESTING)
-  set(BUILD_TESTING ON)
-endif()
 if(BUILD_TESTING)
   # Prefer an installed GoogleTest; fall back to the submodule.
   find_package(GTest QUIET)
@@ -203,35 +161,33 @@ endif()
 #
 # Install
 #
-if(ZOPFLI_BUILD_INSTALL)
-  # Install binaries, libraries, and headers
-  install(TARGETS libzopfli libzopflipng zopfli zopflipng
-    EXPORT ZopfliTargets
-    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-  )
-  install(FILES src/zopfli/zopfli.h src/zopflipng/zopflipng_lib.h
-    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-  )
+# Install binaries, libraries, and headers
+install(TARGETS libzopfli libzopflipng zopfli zopflipng
+  EXPORT ZopfliTargets
+  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+)
+install(FILES src/zopfli/zopfli.h src/zopflipng/zopflipng_lib.h
+  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+)
 
-  # Install config file package
-  #
-  # This allows CMake based projects to use the installed libraries with
-  # find_package(Zopfli).
-  include(CMakePackageConfigHelpers)
-  write_basic_package_version_file(
-    ${CMAKE_CURRENT_BINARY_DIR}/ZopfliConfigVersion.cmake
-    VERSION ${PROJECT_VERSION}
-    COMPATIBILITY SameMajorVersion
-  )
-  # Since we have no dependencies, use export file directly as config file
-  install(EXPORT ZopfliTargets
-    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Zopfli
-    NAMESPACE Zopfli::
-    FILE ZopfliConfig.cmake
-  )
-  install(FILES ${CMAKE_CURRENT_BINARY_DIR}/ZopfliConfigVersion.cmake
-    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Zopfli
-  )
-endif()
+# Install config file package
+#
+# This allows CMake based projects to use the installed libraries with
+# find_package(Zopfli).
+include(CMakePackageConfigHelpers)
+write_basic_package_version_file(
+  ${CMAKE_CURRENT_BINARY_DIR}/ZopfliConfigVersion.cmake
+  VERSION ${PROJECT_VERSION}
+  COMPATIBILITY SameMajorVersion
+)
+# Since we have no dependencies, use export file directly as config file
+install(EXPORT ZopfliTargets
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Zopfli
+  NAMESPACE Zopfli::
+  FILE ZopfliConfig.cmake
+)
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/ZopfliConfigVersion.cmake
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Zopfli
+)
