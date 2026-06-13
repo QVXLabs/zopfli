@@ -1,24 +1,37 @@
-Want to contribute? Great! First, read this page (including the small print at the end).
+# Contributing
 
-### Before you contribute
-Before we can use your code, you must sign the
-[Google Individual Contributor License Agreement](https://developers.google.com/open-source/cla/individual?csw=1)
-(CLA), which you can do online. The CLA is necessary mainly because you own the
-copyright to your changes, even after your contribution becomes part of our
-codebase, so we need your permission to use and distribute your code. We also
-need to be sure of various other things—for instance that you'll tell us if you
-know that your code infringes on other people's patents. You don't have to sign
-the CLA until after you've submitted your code for review and a member has
-approved it, but you must do it before we can put your code into our codebase.
-Before you start working on a larger contribution, you should get in touch with
-us first through the issue tracker with your idea so that we can help out and
-possibly guide you. Coordinating up front makes it much easier to avoid
-frustration later on.
+Thanks for your interest in contributing to Zopfli! Contributions of all
+kinds are welcome — bug reports, fixes, documentation, and new features.
 
-### Code reviews
-All submissions, including submissions by project members, require review. We
-use Github pull requests for this purpose.
+## Reporting issues
 
-### The small print
-Contributions made by corporations are covered by a different agreement than
-the one above, the Software Grant and Corporate Contributor License Agreement.
+Before opening an issue, please search the
+[issue tracker](https://github.com/google/zopfli/issues) to check whether it
+has already been reported. When filing a new issue, include:
+
+- A clear description of the problem or request.
+- Steps to reproduce, including the input data or command line where relevant.
+- The version or commit of Zopfli and your platform/compiler.
+
+## Submitting changes
+
+1. Fork the repository and create a topic branch from `master`.
+2. Make your change, keeping the existing code style and adding tests where
+   it makes sense.
+3. Make sure the project builds and the test suite passes (see the build
+   instructions in `README`/`CMakeLists.txt`).
+4. Open a pull request describing what the change does and why.
+
+For larger changes, consider opening an issue first to discuss the approach so
+effort isn't wasted on something that may not be merged.
+
+## Code reviews
+
+All submissions, including those by project members, are reviewed through
+GitHub pull requests. Keep pull requests focused and reasonably small to make
+review easier.
+
+## License
+
+By contributing, you agree that your contributions will be licensed under the
+same [Apache License 2.0](COPYING) that covers this project.

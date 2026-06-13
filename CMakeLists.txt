@@ -1,9 +1,6 @@
 cmake_minimum_required(VERSION 3.10)
 
-project(Zopfli
-  VERSION 1.0.5
-  LANGUAGES C CXX
-)
+project(Zopfli VERSION 1.0.5 LANGUAGES C CXX)
 
 # Check if Zopfli is the top-level project (standalone), or a subproject
 set(zopfli_standalone FALSE)
@@ -48,20 +45,19 @@ endif()
 # empty default build type to Release.
 option(ZOPFLI_DEFAULT_RELEASE "If CMAKE_BUILD_TYPE is empty, default to Release" ON)
 
+# Line-coverage instrumentation (gcc/clang); use with the test suite.
+option(ZOPFLI_COVERAGE "Build with coverage instrumentation" OFF)
+if(ZOPFLI_COVERAGE)
+  add_compile_options(--coverage -O0 -g)
+  add_link_options(--coverage)
+endif()
+
 if(zopfli_standalone AND ZOPFLI_DEFAULT_RELEASE)
   if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     message(STATUS "CMAKE_BUILD_TYPE empty, defaulting to Release")
     set(CMAKE_BUILD_TYPE Release)
   endif()
 endif()
-
-#
-# Library version
-#
-set(ZOPFLI_VERSION_MAJOR ${PROJECT_VERSION_MAJOR})
-set(ZOPFLI_VERSION_MINOR ${PROJECT_VERSION_MINOR})
-set(ZOPFLI_VERSION_PATCH ${PROJECT_VERSION_PATCH})
-set(ZOPFLI_VERSION ${PROJECT_VERSION})
 
 if(ZOPFLI_BUILD_SHARED)
   set(zopfli_library_type SHARED)
@@ -95,8 +91,8 @@ target_include_directories(libzopfli
 )
 set_target_properties(libzopfli PROPERTIES
   OUTPUT_NAME zopfli
-  VERSION ${ZOPFLI_VERSION}
-  SOVERSION ${ZOPFLI_VERSION_MAJOR}
+  VERSION ${PROJECT_VERSION}
+  SOVERSION ${PROJECT_VERSION_MAJOR}
 )
 if(UNIX AND NOT (BEOS OR HAIKU))
   target_link_libraries(libzopfli PUBLIC m)
@@ -118,8 +114,8 @@ target_include_directories(libzopflipng
 )
 set_target_properties(libzopflipng PROPERTIES
   OUTPUT_NAME zopflipng
-  VERSION ${ZOPFLI_VERSION}
-  SOVERSION ${ZOPFLI_VERSION_MAJOR}
+  VERSION ${PROJECT_VERSION}
+  SOVERSION ${PROJECT_VERSION_MAJOR}
 )
 
 # MSVC does not export symbols by default when building a DLL
@@ -134,17 +130,16 @@ endif()
 #
 add_executable(zopfli src/zopfli/zopfli_bin.c)
 target_link_libraries(zopfli PRIVATE libzopfli)
-if(MSVC)
-  target_compile_definitions(zopfli PRIVATE _CRT_SECURE_NO_WARNINGS)
-endif()
 
 #
 # zopflipng
 #
 add_executable(zopflipng src/zopflipng/zopflipng_bin.cc)
 target_link_libraries(zopflipng PRIVATE libzopflipng)
+
+# Silence MSVC warnings on standard C functions like fopen
 if(MSVC)
-  target_compile_definitions(zopflipng PRIVATE _CRT_SECURE_NO_WARNINGS)
+  target_compile_definitions(zopfli zopflipng PRIVATE _CRT_SECURE_NO_WARNINGS)
 endif()
 
 # Create aliases
@@ -155,6 +150,54 @@ add_library(Zopfli::libzopfli ALIAS libzopfli)
 add_library(Zopfli::libzopflipng ALIAS libzopflipng)
 add_executable(Zopfli::zopfli ALIAS zopfli)
 add_executable(Zopfli::zopflipng ALIAS zopflipng)
+
+#
+# Tests
+#
+include(CTest)  # defines BUILD_TESTING, calls enable_testing()
+if(BUILD_TESTING)
+  # Prefer an installed GoogleTest; fall back to the submodule.
+  find_package(GTest QUIET)
+  if(NOT GTest_FOUND)
+    set(zopfli_gtest_dir ${CMAKE_CURRENT_SOURCE_DIR}/third-party/google-test)
+    if(NOT EXISTS ${zopfli_gtest_dir}/CMakeLists.txt)
+      message(FATAL_ERROR
+        "GoogleTest not found via find_package and the submodule at "
+        "third-party/google-test is missing. Run:\n"
+        "  git submodule update --init third-party/google-test")
+    endif()
+    # Match the parent's MSVC runtime choice.
+    set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+    # GoogleTest 1.11.0's cmake_minimum_required is too low for CMake 4.x.
+    # 3.10 clears both the hard error and the "< 3.10" deprecation warning.
+    set(CMAKE_POLICY_VERSION_MINIMUM 3.10)
+    add_subdirectory(${zopfli_gtest_dir}
+      ${CMAKE_BINARY_DIR}/third-party/google-test EXCLUDE_FROM_ALL)
+    unset(CMAKE_POLICY_VERSION_MINIMUM)
+  endif()
+
+  add_executable(zopfli_tests
+    test/zopfli_public_test.cc
+    test/tree_test.cc
+    test/katajainen_test.cc
+    test/cache_test.cc
+    test/hash_test.cc
+    test/lz77_test.cc
+    test/blocksplitter_test.cc
+    test/deflate_test.cc
+    test/squeeze_test.cc
+  )
+  target_link_libraries(zopfli_tests PRIVATE libzopfli GTest::gtest_main)
+  set_target_properties(zopfli_tests PROPERTIES
+    CXX_STANDARD 11
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF
+  )
+
+  # Register the binary as one CTest test, avoiding gtest_discover_tests()
+  # so it works with any GTest provider (e.g. conan's find_package(GTest)).
+  add_test(NAME zopfli_tests COMMAND zopfli_tests)
+endif()
 
 #
 # Install
@@ -178,7 +221,7 @@ if(ZOPFLI_BUILD_INSTALL)
   include(CMakePackageConfigHelpers)
   write_basic_package_version_file(
     ${CMAKE_CURRENT_BINARY_DIR}/ZopfliConfigVersion.cmake
-    VERSION ${ZOPFLI_VERSION}
+    VERSION ${PROJECT_VERSION}
     COMPATIBILITY SameMajorVersion
   )
   # Since we have no dependencies, use export file directly as config file

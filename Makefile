@@ -4,11 +4,9 @@ CXX ?= g++
 VERSION_MAJOR := 1
 VERSION := $(VERSION_MAJOR).0.5
 
-# Shared-library naming differs by linker. GNU ld uses -soname and
-# libfoo.so.MAJOR.MINOR.PATCH; Apple ld uses -install_name and
-# libfoo.MAJOR.MINOR.PATCH.dylib.
-# $(call shared_lib,foo)    -> versioned output filename
-# $(call shared_soname,foo) -> soname / install_name value
+# Shared-library naming differs by linker: GNU ld uses -soname and
+# libfoo.so.VERSION; Apple ld uses -install_name and libfoo.VERSION.dylib.
+# shared_lib(foo) -> output filename; shared_soname(foo) -> soname value.
 ifeq ($(shell uname -s),Darwin)
   SHARED_FLAG := -dynamiclib
   SONAME_FLAG := -install_name
