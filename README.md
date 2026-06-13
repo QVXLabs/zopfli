@@ -109,7 +109,7 @@ gcc src/zopfli/*.c -O2 -W -Wall -Wextra -Wno-unused-function -ansi -pedantic -lm
 
 ## Running the tests
 
-The tests are built with CMake and run through CTest:
+The tests are built with CMake and run by executing the GoogleTest binary:
 
 ```sh
 cmake -B build
