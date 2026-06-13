@@ -1,69 +1,31 @@
 cmake_minimum_required(VERSION 3.10)
 
-project(Zopfli)
-
-# Check if Zopfli is the top-level project (standalone), or a subproject
-set(zopfli_standalone FALSE)
-get_directory_property(zopfli_parent_directory PARENT_DIRECTORY)
-if(zopfli_parent_directory STREQUAL "")
-  set(zopfli_standalone TRUE)
-endif()
-unset(zopfli_parent_directory)
+project(Zopfli VERSION 1.0.5 LANGUAGES C CXX)
 
 #
 # Options
 #
+# Library type and build config use the standard BUILD_SHARED_LIBS and
+# CMAKE_BUILD_TYPE; set those directly.
 
-# ZOPFLI_BUILD_SHARED controls if Zopfli libraries are built as shared or
-# static
-#
-# It defaults to the value of BUILD_SHARED_LIBS if set, and in most cases
-# that should be used instead. The purpose of ZOPFLI_BUILD_SHARED is to allow
-# overriding it when built as a subproject.
-set(zopfli_shared_default OFF)
-if(DEFINED BUILD_SHARED_LIBS)
-  set(zopfli_shared_default ${BUILD_SHARED_LIBS})
-endif()
-option(ZOPFLI_BUILD_SHARED "Build Zopfli with shared libraries" ${zopfli_shared_default})
-unset(zopfli_shared_default)
+# Force PIC for static libs too (shared libs are PIC regardless).
+option(ZOPFLI_PIC "Build with position-independent code" OFF)
 
-# ZOPFLI_BUILD_INSTALL controls if Zopfli adds an install target to the build
-#
-# When built standalone or as a shared library subproject, the default is ON,
-# and for static library subproject the default is OFF.
-if(zopfli_standalone OR ZOPFLI_BUILD_SHARED)
-  option(ZOPFLI_BUILD_INSTALL "Add Zopfli install target" ON)
-else()
-  option(ZOPFLI_BUILD_INSTALL "Add Zopfli install target" OFF)
+# Line-coverage instrumentation (gcc/clang); use with the test suite.
+option(ZOPFLI_COVERAGE "Build with coverage instrumentation" OFF)
+
+# Default ON; gtest is run directly, so include(CTest) is intentionally unused.
+if(NOT DEFINED BUILD_TESTING)
+  set(BUILD_TESTING ON)
 endif()
 
-# ZOPFLI_DEFAULT_RELEASE enables changing empty build type to Release
-#
-# Make based single-configuration generators default to an empty build type,
-# which might be surprising, but could be useful if you want full control over
-# compiler and linker flags. When ZOPFLI_DEFAULT_RELEASE is ON, change an
-# empty default build type to Release.
-option(ZOPFLI_DEFAULT_RELEASE "If CMAKE_BUILD_TYPE is empty, default to Release" ON)
-
-if(zopfli_standalone AND ZOPFLI_DEFAULT_RELEASE)
-  if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
-    message(STATUS "CMAKE_BUILD_TYPE empty, defaulting to Release")
-    set(CMAKE_BUILD_TYPE Release)
-  endif()
+# Read at target creation, so they must precede it.
+if(ZOPFLI_PIC)
+  set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 endif()
-
-#
-# Library version
-#
-set(ZOPFLI_VERSION_MAJOR 1)
-set(ZOPFLI_VERSION_MINOR 0)
-set(ZOPFLI_VERSION_PATCH 3)
-set(ZOPFLI_VERSION ${ZOPFLI_VERSION_MAJOR}.${ZOPFLI_VERSION_MINOR}.${ZOPFLI_VERSION_PATCH})
-
-if(ZOPFLI_BUILD_SHARED)
-  set(zopfli_library_type SHARED)
-else()
-  set(zopfli_library_type STATIC)
+if(ZOPFLI_COVERAGE)
+  add_compile_options(--coverage -O0 -g)
+  link_libraries(--coverage)
 endif()
 
 include(GNUInstallDirs)
@@ -71,7 +33,7 @@ include(GNUInstallDirs)
 #
 # libzopfli
 #
-add_library(libzopfli ${zopfli_library_type}
+add_library(libzopfli
   src/zopfli/blocksplitter.c
   src/zopfli/cache.c
   src/zopfli/deflate.c
@@ -92,22 +54,22 @@ target_include_directories(libzopfli
 )
 set_target_properties(libzopfli PROPERTIES
   OUTPUT_NAME zopfli
-  VERSION ${ZOPFLI_VERSION}
-  SOVERSION ${ZOPFLI_VERSION_MAJOR}
+  VERSION ${PROJECT_VERSION}
+  SOVERSION ${PROJECT_VERSION_MAJOR}
 )
 if(UNIX AND NOT (BEOS OR HAIKU))
-  target_link_libraries(libzopfli m)
+  target_link_libraries(libzopfli PUBLIC m)
 endif()
 
 #
 # libzopflipng
 #
-add_library(libzopflipng ${zopfli_library_type}
+add_library(libzopflipng
   src/zopflipng/zopflipng_lib.cc
   src/zopflipng/lodepng/lodepng.cpp
   src/zopflipng/lodepng/lodepng_util.cpp
 )
-target_link_libraries(libzopflipng libzopfli)
+target_link_libraries(libzopflipng PUBLIC libzopfli)
 target_include_directories(libzopflipng
   INTERFACE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/zopflipng>
@@ -115,36 +77,32 @@ target_include_directories(libzopflipng
 )
 set_target_properties(libzopflipng PROPERTIES
   OUTPUT_NAME zopflipng
-  VERSION ${ZOPFLI_VERSION}
-  SOVERSION ${ZOPFLI_VERSION_MAJOR}
+  VERSION ${PROJECT_VERSION}
+  SOVERSION ${PROJECT_VERSION_MAJOR}
 )
 
-# MSVC does not export symbols by default when building a DLL, this is a
-# workaround for recent versions of CMake
-if(MSVC AND ZOPFLI_BUILD_SHARED)
-  if(CMAKE_VERSION VERSION_LESS 3.4)
-    message(WARNING "Automatic export of all symbols to DLL not supported until CMake 3.4")
-  else()
-    set_target_properties(libzopfli PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
-    set_target_properties(libzopflipng PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
-  endif()
+# MSVC does not export symbols by default when building a DLL
+if(MSVC AND BUILD_SHARED_LIBS)
+  set_target_properties(libzopfli libzopflipng PROPERTIES
+    WINDOWS_EXPORT_ALL_SYMBOLS ON
+  )
 endif()
 
 #
 # zopfli
 #
 add_executable(zopfli src/zopfli/zopfli_bin.c)
-target_link_libraries(zopfli libzopfli)
-if(MSVC)
-  target_compile_definitions(zopfli PRIVATE _CRT_SECURE_NO_WARNINGS)
-endif()
+target_link_libraries(zopfli PRIVATE libzopfli)
 
 #
 # zopflipng
 #
 add_executable(zopflipng src/zopflipng/zopflipng_bin.cc)
-target_link_libraries(zopflipng libzopflipng)
+target_link_libraries(zopflipng PRIVATE libzopflipng)
+
+# Silence MSVC warnings on standard C functions like fopen
 if(MSVC)
+  target_compile_definitions(zopfli PRIVATE _CRT_SECURE_NO_WARNINGS)
   target_compile_definitions(zopflipng PRIVATE _CRT_SECURE_NO_WARNINGS)
 endif()
 
@@ -152,46 +110,84 @@ endif()
 #
 # Makes targets available to projects using Zopfli as a subproject using the
 # same names as in the config file package.
-if(NOT CMAKE_VERSION VERSION_LESS 3.0)
-  add_library(Zopfli::libzopfli ALIAS libzopfli)
-  add_library(Zopfli::libzopflipng ALIAS libzopflipng)
-  add_executable(Zopfli::zopfli ALIAS zopfli)
-  add_executable(Zopfli::zopflipng ALIAS zopflipng)
+add_library(Zopfli::libzopfli ALIAS libzopfli)
+add_library(Zopfli::libzopflipng ALIAS libzopflipng)
+add_executable(Zopfli::zopfli ALIAS zopfli)
+add_executable(Zopfli::zopflipng ALIAS zopflipng)
+
+#
+# Tests
+#
+if(BUILD_TESTING)
+  # Prefer an installed GoogleTest; fall back to the submodule.
+  find_package(GTest QUIET)
+  if(NOT GTest_FOUND)
+    set(zopfli_gtest_dir ${CMAKE_CURRENT_SOURCE_DIR}/third-party/google-test)
+    if(NOT EXISTS ${zopfli_gtest_dir}/CMakeLists.txt)
+      message(FATAL_ERROR
+        "GoogleTest not found via find_package and the submodule at "
+        "third-party/google-test is missing. Run:\n"
+        "  git submodule update --init third-party/google-test")
+    endif()
+    # Match the parent's MSVC runtime choice.
+    set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+    # GoogleTest 1.11.0's cmake_minimum_required is too low for CMake 4.x.
+    # 3.10 clears both the hard error and the "< 3.10" deprecation warning.
+    set(CMAKE_POLICY_VERSION_MINIMUM 3.10)
+    add_subdirectory(${zopfli_gtest_dir}
+      ${CMAKE_BINARY_DIR}/third-party/google-test EXCLUDE_FROM_ALL)
+    unset(CMAKE_POLICY_VERSION_MINIMUM)
+  endif()
+
+  add_executable(zopfli_tests
+    test/zopfli_public_test.cc
+    test/tree_test.cc
+    test/katajainen_test.cc
+    test/cache_test.cc
+    test/hash_test.cc
+    test/lz77_test.cc
+    test/blocksplitter_test.cc
+    test/deflate_test.cc
+    test/squeeze_test.cc
+  )
+  target_link_libraries(zopfli_tests PRIVATE libzopfli GTest::gtest_main)
+  set_target_properties(zopfli_tests PROPERTIES
+    CXX_STANDARD 11
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF
+  )
 endif()
 
 #
 # Install
 #
-if(ZOPFLI_BUILD_INSTALL)
-  # Install binaries, libraries, and headers
-  install(TARGETS libzopfli libzopflipng zopfli zopflipng
-    EXPORT ZopfliTargets
-    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-  )
-  install(FILES src/zopfli/zopfli.h src/zopflipng/zopflipng_lib.h
-    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-  )
+# Install binaries, libraries, and headers
+install(TARGETS libzopfli libzopflipng zopfli zopflipng
+  EXPORT ZopfliTargets
+  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+)
+install(FILES src/zopfli/zopfli.h src/zopflipng/zopflipng_lib.h
+  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+)
 
-  # Install config file package
-  #
-  # This allows CMake based projects to use the installed libraries with
-  # find_package(Zopfli).
-  if(NOT CMAKE_VERSION VERSION_LESS 3.0)
-    include(CMakePackageConfigHelpers)
-    write_basic_package_version_file(${CMAKE_CURRENT_BINARY_DIR}/ZopfliConfigVersion.cmake
-      VERSION ${ZOPFLI_VERSION}
-      COMPATIBILITY SameMajorVersion
-    )
-    # Since we have no dependencies, use export file directly as config file
-    install(EXPORT ZopfliTargets
-      DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Zopfli
-      NAMESPACE Zopfli::
-      FILE ZopfliConfig.cmake
-    )
-    install(FILES ${CMAKE_CURRENT_BINARY_DIR}/ZopfliConfigVersion.cmake
-      DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Zopfli
-    )
-  endif()
-endif()
+# Install config file package
+#
+# This allows CMake based projects to use the installed libraries with
+# find_package(Zopfli).
+include(CMakePackageConfigHelpers)
+write_basic_package_version_file(
+  ${CMAKE_CURRENT_BINARY_DIR}/ZopfliConfigVersion.cmake
+  VERSION ${PROJECT_VERSION}
+  COMPATIBILITY SameMajorVersion
+)
+# Since we have no dependencies, use export file directly as config file
+install(EXPORT ZopfliTargets
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Zopfli
+  NAMESPACE Zopfli::
+  FILE ZopfliConfig.cmake
+)
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/ZopfliConfigVersion.cmake
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Zopfli
+)
