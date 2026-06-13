@@ -19,7 +19,7 @@ has already been reported. When filing a new issue, include:
 2. Make your change, keeping the existing code style and adding tests where
    it makes sense.
 3. Make sure the project builds and the test suite passes (see the build
-   instructions in `README`/`CMakeLists.txt`).
+   instructions in `README.md`/`CMakeLists.txt`).
 4. Open a pull request describing what the change does and why.
 
 For larger changes, consider opening an issue first to discuss the approach so
