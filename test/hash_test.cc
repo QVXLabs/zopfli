@@ -14,9 +14,14 @@ TEST(Hash, WarmupAndUpdateOverBuffer) {
   for (size_t i = 0; i < data.size(); i++) {
     ZopfliUpdateHash(data.data(), i, data.size(), &h);
   }
-  // The repeated "the quick brown fox" must have produced a hash chain:
-  // some position's head points back to an earlier equal-hash position.
-  EXPECT_GE(h.head[h.val], 0);
+  // The repeated substring should create at least one "prev" link to an earlier
+  // position with the same hash value.
+  bool has_chain = false;
+  for (size_t pos = 0; pos < data.size(); ++pos) {
+    const unsigned short hpos = static_cast<unsigned short>(pos & ZOPFLI_WINDOW_MASK);
+    if (h.prev[hpos] != hpos) { has_chain = true; break; }
+  }
+  EXPECT_TRUE(has_chain);
   ZopfliCleanHash(&h);
 }
 
