@@ -1,5 +1,9 @@
 # Zopfli
 
+[![Linux](https://github.com/QVXLabs/zopfli/actions/workflows/linux.yml/badge.svg)](https://github.com/QVXLabs/zopfli/actions/workflows/linux.yml)
+[![macOS](https://github.com/QVXLabs/zopfli/actions/workflows/macos.yml/badge.svg)](https://github.com/QVXLabs/zopfli/actions/workflows/macos.yml)
+[![Windows](https://github.com/QVXLabs/zopfli/actions/workflows/windows.yml/badge.svg)](https://github.com/QVXLabs/zopfli/actions/workflows/windows.yml)
+
 Zopfli Compression Algorithm is a compression library programmed in C to perform
 very good, but slow, deflate or zlib compression.
 
