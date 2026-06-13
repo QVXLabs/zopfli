@@ -111,11 +111,9 @@ gcc src/zopfli/*.c -O2 -W -Wall -Wextra -Wno-unused-function -ansi -pedantic -lm
 
 The tests are built with CMake and run by executing the GoogleTest binary:
 
-```sh
-cmake -B build
-cmake --build build
-ctest --test-dir build --output-on-failure
-```
+    cmake -B build
+    cmake --build build
+    ./build/zopfli_tests
 
 You can also run the test binary directly:
 
