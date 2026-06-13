@@ -19,8 +19,9 @@ else
   shared_soname = lib$(1).so.$(VERSION_MAJOR)
 endif
 
-override CFLAGS := -W -Wall -Wextra -ansi -pedantic -lm -O3 -Wno-unused-function -fPIC $(CFLAGS)
+override CFLAGS := -W -Wall -Wextra -ansi -pedantic -O3 -Wno-unused-function -fPIC $(CFLAGS)
 override CXXFLAGS := -W -Wall -Wextra -ansi -pedantic -O3 -fPIC $(CXXFLAGS)
+LDLIBS := -lm $(LDLIBS)
 
 ZOPFLILIB_SRC = src/zopfli/blocksplitter.c src/zopfli/cache.c\
                 src/zopfli/deflate.c src/zopfli/gzip_container.c\
@@ -44,23 +45,23 @@ all: zopfli libzopfli libzopfli.a zopflipng libzopflipng libzopflipng.a
 
 obj/%.o: %.c
 	@mkdir -p `dirname $@`
-	$(CC) $(CFLAGS) -c $< -o $@
+	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
 
 obj/%.o: %.cc
 	@mkdir -p `dirname $@`
-	$(CXX) $(CXXFLAGS) -c $< -o $@
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
 obj/%.o: %.cpp
 	@mkdir -p `dirname $@`
-	$(CXX) $(CXXFLAGS) -c $< -o $@
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
 # Zopfli binary
 zopfli: $(ZOPFLILIB_OBJ) $(ZOPFLIBIN_OBJ)
-	$(CC) $^ $(CFLAGS) -o $@ $(LDFLAGS)
+	$(CC) $^ $(CFLAGS) -o $@ $(LDFLAGS) $(LDLIBS)
 
 # Zopfli shared library
 libzopfli: $(ZOPFLILIB_OBJ)
-	$(CC) $^ $(CFLAGS) $(SHARED_FLAG) -Wl,$(SONAME_FLAG),$(call shared_soname,zopfli) -o $(call shared_lib,zopfli) $(LDFLAGS)
+	$(CC) $^ $(CFLAGS) $(SHARED_FLAG) -Wl,$(SONAME_FLAG),$(call shared_soname,zopfli) -o $(call shared_lib,zopfli) $(LDFLAGS) $(LDLIBS)
 
 # Zopfli static library
 libzopfli.a: $(ZOPFLILIB_OBJ)
@@ -68,11 +69,11 @@ libzopfli.a: $(ZOPFLILIB_OBJ)
 
 # ZopfliPNG binary
 zopflipng: $(ZOPFLILIB_OBJ) $(LODEPNG_OBJ) $(ZOPFLIPNGLIB_OBJ) $(ZOPFLIPNGBIN_OBJ)
-	$(CXX) $^ $(CFLAGS) -o $@ $(LDFLAGS)
+	$(CXX) $^ $(CXXFLAGS) -o $@ $(LDFLAGS) $(LDLIBS)
 
 # ZopfliPNG shared library
 libzopflipng: $(ZOPFLILIB_OBJ) $(LODEPNG_OBJ) $(ZOPFLIPNGLIB_OBJ)
-	$(CXX) $^ $(CFLAGS) $(SHARED_FLAG) -Wl,$(SONAME_FLAG),$(call shared_soname,zopflipng) -o $(call shared_lib,zopflipng) $(LDFLAGS)
+	$(CXX) $^ $(CXXFLAGS) $(SHARED_FLAG) -Wl,$(SONAME_FLAG),$(call shared_soname,zopflipng) -o $(call shared_lib,zopflipng) $(LDFLAGS) $(LDLIBS)
 
 # ZopfliPNG static library
 libzopflipng.a: $(LODEPNG_OBJ) $(ZOPFLIPNGLIB_OBJ)
