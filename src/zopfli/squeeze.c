@@ -215,6 +215,30 @@ static size_t zopfli_min(size_t a, size_t b) {
 }
 
 /*
+Applies the optimal-parse cost update for a run of match lengths [klo, khi] that
+all share one distance, at block index j. Shared by the cached-run fast path and
+the freshly-found-match path so there is a single cost-update implementation.
+*/
+static void UpdateCostForRange(ZopfliCost* costs, unsigned short* length_array,
+    unsigned short* dist_array, size_t j, size_t klo, size_t khi,
+    unsigned short dist, ZopfliCost dcost, const CostCache* cache,
+    ZopfliCost costsj, ZopfliCost mincostaddcostj) {
+  size_t k;
+  for (k = klo; k <= khi; k++) {
+    ZopfliCost newCost;
+    if (costs[j + k] <= mincostaddcostj) continue;
+    newCost = cache->ll_cost[k] + dcost + costsj;
+    assert(newCost >= 0);
+    if (newCost < costs[j + k]) {
+      assert(k <= ZOPFLI_MAX_MATCH);
+      costs[j + k] = newCost;
+      length_array[j + k] = k;
+      dist_array[j + k] = dist;
+    }
+  }
+}
+
+/*
 Performs the forward pass for "squeeze". Gets the most optimal length to reach
 every byte from a previous byte, using cost calculations.
 s: the ZopfliBlockState
@@ -287,9 +311,6 @@ static ZopfliCost GetBestLengths(ZopfliBlockState *s,
     }
 #endif
 
-    ZopfliFindLongestMatch(s, h, in, i, inend, ZOPFLI_MAX_MATCH, sublen,
-                           &dist, &leng);
-
     /* Literal. */
     if (i + 1 <= inend) {
       ZopfliCost newCost = cache->lit_cost[in[i]] + costs[j];
@@ -300,33 +321,58 @@ static ZopfliCost GetBestLengths(ZopfliBlockState *s,
         dist_array[j + 1] = 0;  /* Literal. */
       }
     }
-    /* Lengths. */
-    kend = zopfli_min(leng, inend-i);
     mincostaddcostj = mincost + costs[j];
-    {
-      /* sublen[k] is piecewise-constant, so cache the dist cost and recompute
-         the dist symbol only when the distance changes. */
-      unsigned short curdist = 0;
-      ZopfliCost dcost = 0;
-      for (k = 3; k <= kend; k++) {
-        ZopfliCost newCost;
 
-        /* The cheapest a match can be is mincost; skip if we already beat it. */
-        if (costs[j + k] <= mincostaddcostj) continue;
-
-        if (sublen[k] != curdist) {
-          curdist = sublen[k];
-          dcost = cache->d_cost[ZopfliGetDistSymbol(curdist)];
+#ifdef ZOPFLI_LONGEST_MATCH_CACHE
+    /* Fast path: when this position's match is fully cached, run the cost DP
+    straight from the cache's runs instead of materializing all sublen entries.
+    The trigger is exactly TryGetFromLongestMatchCache's full-sublen hit (limit
+    ZOPFLI_MAX_MATCH, sublen present), so the runs equal what ZopfliFindLongest-
+    Match would have produced; anything else falls through to the call below. */
+    if (s->lmc) {
+      size_t lmcpos = i - s->blockstart;
+      unsigned cachedlen = s->lmc->length[lmcpos];
+      if ((cachedlen == 0 || s->lmc->dist[lmcpos] != 0)
+          && cachedlen <= ZopfliMaxCachedSublen(s->lmc, lmcpos, cachedlen)) {
+        unsigned short run_maxlen[ZOPFLI_CACHE_LENGTH];
+        unsigned short run_dist[ZOPFLI_CACHE_LENGTH];
+        int nruns = ZopfliCacheSublenRuns(s->lmc, lmcpos, cachedlen,
+                                          run_maxlen, run_dist);
+        size_t klo = 3;
+        int r;
+        kend = zopfli_min((size_t)cachedlen, inend - i);
+        for (r = 0; r < nruns && klo <= kend; r++) {
+          size_t khi = run_maxlen[r];
+          if (khi > kend) khi = kend;
+          if (klo <= khi) {
+            ZopfliCost dcost = cache->d_cost[ZopfliGetDistSymbol(run_dist[r])];
+            UpdateCostForRange(costs, length_array, dist_array, j, klo, khi,
+                               run_dist[r], dcost, cache, costs[j],
+                               mincostaddcostj);
+          }
+          klo = (size_t)run_maxlen[r] + 1;
         }
-        newCost = cache->ll_cost[k] + dcost + costs[j];
-        assert(newCost >= 0);
-        if (newCost < costs[j + k]) {
-          assert(k <= ZOPFLI_MAX_MATCH);
-          costs[j + k] = newCost;
-          length_array[j + k] = k;
-          dist_array[j + k] = curdist;
-        }
+        continue;
       }
+    }
+#endif
+
+    ZopfliFindLongestMatch(s, h, in, i, inend, ZOPFLI_MAX_MATCH, sublen,
+                           &dist, &leng);
+
+    /* Lengths. sublen[k] is piecewise-constant, so group equal-distance runs
+    and apply each run's cost once. */
+    kend = zopfli_min(leng, inend - i);
+    k = 3;
+    while (k <= kend) {
+      unsigned short rundist = sublen[k];
+      size_t khi = k;
+      ZopfliCost dcost;
+      while (khi + 1 <= kend && sublen[khi + 1] == rundist) khi++;
+      dcost = cache->d_cost[ZopfliGetDistSymbol(rundist)];
+      UpdateCostForRange(costs, length_array, dist_array, j, k, khi,
+                         rundist, dcost, cache, costs[j], mincostaddcostj);
+      k = khi + 1;
     }
   }
 

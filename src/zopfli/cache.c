@@ -15,6 +15,7 @@ limitations under the License.
 
 Author: lode.vandevenne@gmail.com (Lode Vandevenne)
 Author: jyrki.alakuijala@gmail.com (Jyrki Alakuijala)
+Author: afalls@qvxlabs.com (Ardavon Falls)
 */
 
 #include "cache.h"
@@ -105,6 +106,30 @@ void ZopfliCacheToSublen(const ZopfliLongestMatchCache* lmc,
     if (length == maxlength) break;
     prevlength = length + 1;
   }
+}
+
+int ZopfliCacheSublenRuns(const ZopfliLongestMatchCache* lmc,
+                          size_t pos, size_t length,
+                          unsigned short* run_maxlen,
+                          unsigned short* run_dist) {
+  unsigned maxlength = ZopfliMaxCachedSublen(lmc, pos, length);
+  unsigned char* cache;
+  size_t j;
+  int n = 0;
+#if ZOPFLI_CACHE_LENGTH == 0
+  return 0;
+#endif
+  if (length < 3) return 0;
+  cache = &lmc->sublen[ZOPFLI_CACHE_LENGTH * pos * 3];
+  for (j = 0; j < ZOPFLI_CACHE_LENGTH; j++) {
+    unsigned len = cache[j * 3] + 3;
+    unsigned dist = cache[j * 3 + 1] + 256 * cache[j * 3 + 2];
+    run_maxlen[n] = (unsigned short)len;
+    run_dist[n] = (unsigned short)dist;
+    n++;
+    if (len == maxlength) break;
+  }
+  return n;
 }
 
 /*

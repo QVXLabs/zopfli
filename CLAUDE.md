@@ -79,3 +79,7 @@ This repo is an optimization effort. For any perf change:
   exhaustive converged-window scan): +0.03% (worse). `SplitCost` minimizes a
   *greedy*-LZ77 proxy while output uses optimal LZ77; precise proxy-minimization
   overfits and diverges. The coarse 9-point search is intentional tuning.
+- Splitter histogram memoization: already done. `store->ll_counts`/`d_counts`
+  are maintained as incremental prefix sums, and `ZopfliLZ77GetHistogram`
+  computes any range by subtracting two cumulative snapshots (O(~320), not
+  O(range)). It's ~0.1% in the profile — not a bottleneck. Don't re-propose.

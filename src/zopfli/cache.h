@@ -15,6 +15,7 @@ limitations under the License.
 
 Author: lode.vandevenne@gmail.com (Lode Vandevenne)
 Author: jyrki.alakuijala@gmail.com (Jyrki Alakuijala)
+Author: afalls@qvxlabs.com (Ardavon Falls)
 */
 
 /*
@@ -57,6 +58,19 @@ void ZopfliSublenToCache(const unsigned short* sublen,
 void ZopfliCacheToSublen(const ZopfliLongestMatchCache* lmc,
                          size_t pos, size_t length,
                          unsigned short* sublen);
+
+/*
+Extracts the cached sublen as compact runs instead of a full array: run r covers
+lengths up to and including run_maxlen[r] at distance run_dist[r] (the lower
+bound is the previous run's max + 1, or 3 for the first run). Returns the run
+count (<= ZOPFLI_CACHE_LENGTH). Lets callers consume the cache without
+materializing all sublen entries. run_maxlen/run_dist must hold
+ZOPFLI_CACHE_LENGTH entries.
+*/
+int ZopfliCacheSublenRuns(const ZopfliLongestMatchCache* lmc,
+                          size_t pos, size_t length,
+                          unsigned short* run_maxlen, unsigned short* run_dist);
+
 /* Returns the length up to which could be stored in the cache. */
 unsigned ZopfliMaxCachedSublen(const ZopfliLongestMatchCache* lmc,
                                size_t pos, size_t length);
