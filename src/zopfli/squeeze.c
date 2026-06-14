@@ -332,11 +332,16 @@ static ZopfliCost GetBestLengths(ZopfliBlockState *s,
     if (s->lmc) {
       size_t lmcpos = i - s->blockstart;
       unsigned cachedlen = s->lmc->length[lmcpos];
-      if ((cachedlen == 0 || s->lmc->dist[lmcpos] != 0)
-          && cachedlen <= ZopfliMaxCachedSublen(s->lmc, lmcpos, cachedlen)) {
+      /* cache_available: length 0, or a stored dist. Only then is the cache slot
+      written (sublen is otherwise uninitialized). maxsub is computed once and
+      reused for the trigger and the run extraction. */
+      int avail = (cachedlen == 0 || s->lmc->dist[lmcpos] != 0);
+      unsigned maxsub = avail ?
+          ZopfliMaxCachedSublen(s->lmc, lmcpos, cachedlen) : 0;
+      if (avail && cachedlen <= maxsub) {
         unsigned short run_maxlen[ZOPFLI_CACHE_LENGTH];
         unsigned short run_dist[ZOPFLI_CACHE_LENGTH];
-        int nruns = ZopfliCacheSublenRuns(s->lmc, lmcpos, cachedlen,
+        int nruns = ZopfliCacheSublenRuns(s->lmc, lmcpos, maxsub,
                                           run_maxlen, run_dist);
         size_t klo = 3;
         int r;
@@ -541,8 +546,7 @@ void ZopfliLZ77Optimal(ZopfliBlockState *s,
   /* Repeat statistics with each time the cost model from the previous stat
   run. */
   for (i = 0; i < numiterations; i++) {
-    ZopfliCleanLZ77Store(&currentstore);
-    ZopfliInitLZ77Store(in, &currentstore);
+    ZopfliResetLZ77Store(&currentstore);
     BuildStatCostCache(&stats, shift, &cache);
     LZ77OptimalRun(s, in, instart, inend, &path, &pathsize,
                    length_array, dist_array, &cache, &currentstore, h, costs);

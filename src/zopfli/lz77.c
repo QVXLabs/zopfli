@@ -28,6 +28,7 @@ Author: afalls@qvxlabs.com (Ardavon Falls)
 
 void ZopfliInitLZ77Store(const unsigned char* data, ZopfliLZ77Store* store) {
   store->size = 0;
+  store->cap = 0;
   store->litlens = 0;
   store->dists = 0;
   store->pos = 0;
@@ -50,6 +51,42 @@ void ZopfliCleanLZ77Store(ZopfliLZ77Store* store) {
 
 static size_t CeilDiv(size_t a, size_t b) {
   return (a + b - 1) / b;
+}
+
+/*
+Grows the store's arrays to hold at least 'need' lz77 symbols, reusing the
+existing allocation (geometric growth). The ll_counts/d_counts lengths are
+deterministic functions of the symbol capacity, so one capacity covers all
+seven arrays.
+*/
+static void ZopfliReserveLZ77Store(ZopfliLZ77Store* store, size_t need) {
+  size_t newcap, llc, dc;
+  if (need <= store->cap) return;
+  newcap = store->cap ? store->cap : 16;
+  while (newcap < need) newcap *= 2;
+  llc = ZOPFLI_NUM_LL * CeilDiv(newcap, ZOPFLI_NUM_LL);
+  dc = ZOPFLI_NUM_D * CeilDiv(newcap, ZOPFLI_NUM_D);
+  store->litlens = (unsigned short*)realloc(
+      store->litlens, sizeof(*store->litlens) * newcap);
+  store->dists = (unsigned short*)realloc(
+      store->dists, sizeof(*store->dists) * newcap);
+  store->pos = (size_t*)realloc(store->pos, sizeof(*store->pos) * newcap);
+  store->ll_symbol = (unsigned short*)realloc(
+      store->ll_symbol, sizeof(*store->ll_symbol) * newcap);
+  store->d_symbol = (unsigned short*)realloc(
+      store->d_symbol, sizeof(*store->d_symbol) * newcap);
+  store->ll_counts = (size_t*)realloc(
+      store->ll_counts, sizeof(*store->ll_counts) * llc);
+  store->d_counts = (size_t*)realloc(
+      store->d_counts, sizeof(*store->d_counts) * dc);
+  if (!store->litlens || !store->dists || !store->pos) exit(-1);
+  if (!store->ll_symbol || !store->d_symbol) exit(-1);
+  if (!store->ll_counts || !store->d_counts) exit(-1);
+  store->cap = newcap;
+}
+
+void ZopfliResetLZ77Store(ZopfliLZ77Store* store) {
+  store->size = 0;
 }
 
 void ZopfliCopyLZ77Store(
@@ -77,6 +114,7 @@ void ZopfliCopyLZ77Store(
   if (!dest->ll_counts || !dest->d_counts) exit(-1);
 
   dest->size = source->size;
+  dest->cap = source->size;
   for (i = 0; i < source->size; i++) {
     dest->litlens[i] = source->litlens[i];
     dest->dists[i] = source->dists[i];
@@ -99,54 +137,46 @@ context must be a ZopfliLZ77Store*.
 void ZopfliStoreLitLenDist(unsigned short length, unsigned short dist,
                            size_t pos, ZopfliLZ77Store* store) {
   size_t i;
-  /* Needed for using ZOPFLI_APPEND_DATA multiple times. */
   size_t origsize = store->size;
   size_t llstart = ZOPFLI_NUM_LL * (origsize / ZOPFLI_NUM_LL);
   size_t dstart = ZOPFLI_NUM_D * (origsize / ZOPFLI_NUM_D);
 
+  ZopfliReserveLZ77Store(store, origsize + 1);
+
   /* Everytime the index wraps around, a new cumulative histogram is made: we're
   keeping one histogram value per LZ77 symbol rather than a full histogram for
-  each to save memory. */
+  each to save memory. The new chunk copies the previous chunk's totals (or
+  zeros for the first chunk). */
   if (origsize % ZOPFLI_NUM_LL == 0) {
-    size_t llsize = origsize;
     for (i = 0; i < ZOPFLI_NUM_LL; i++) {
-      ZOPFLI_APPEND_DATA(
-          origsize == 0 ? 0 : store->ll_counts[origsize - ZOPFLI_NUM_LL + i],
-          &store->ll_counts, &llsize);
+      store->ll_counts[origsize + i] =
+          origsize == 0 ? 0 : store->ll_counts[origsize - ZOPFLI_NUM_LL + i];
     }
   }
   if (origsize % ZOPFLI_NUM_D == 0) {
-    size_t dsize = origsize;
     for (i = 0; i < ZOPFLI_NUM_D; i++) {
-      ZOPFLI_APPEND_DATA(
-          origsize == 0 ? 0 : store->d_counts[origsize - ZOPFLI_NUM_D + i],
-          &store->d_counts, &dsize);
+      store->d_counts[origsize + i] =
+          origsize == 0 ? 0 : store->d_counts[origsize - ZOPFLI_NUM_D + i];
     }
   }
 
-  ZOPFLI_APPEND_DATA(length, &store->litlens, &store->size);
-  store->size = origsize;
-  ZOPFLI_APPEND_DATA(dist, &store->dists, &store->size);
-  store->size = origsize;
-  ZOPFLI_APPEND_DATA(pos, &store->pos, &store->size);
+  store->litlens[origsize] = length;
+  store->dists[origsize] = dist;
+  store->pos[origsize] = pos;
   assert(length < 259);
 
   if (dist == 0) {
-    store->size = origsize;
-    ZOPFLI_APPEND_DATA(length, &store->ll_symbol, &store->size);
-    store->size = origsize;
-    ZOPFLI_APPEND_DATA(0, &store->d_symbol, &store->size);
+    store->ll_symbol[origsize] = length;
+    store->d_symbol[origsize] = 0;
     store->ll_counts[llstart + length]++;
   } else {
-    store->size = origsize;
-    ZOPFLI_APPEND_DATA(ZopfliGetLengthSymbol(length),
-                       &store->ll_symbol, &store->size);
-    store->size = origsize;
-    ZOPFLI_APPEND_DATA(ZopfliGetDistSymbol(dist),
-                       &store->d_symbol, &store->size);
+    store->ll_symbol[origsize] = ZopfliGetLengthSymbol(length);
+    store->d_symbol[origsize] = ZopfliGetDistSymbol(dist);
     store->ll_counts[llstart + ZopfliGetLengthSymbol(length)]++;
     store->d_counts[dstart + ZopfliGetDistSymbol(dist)]++;
   }
+
+  store->size = origsize + 1;
 }
 
 void ZopfliAppendLZ77Store(const ZopfliLZ77Store* store,

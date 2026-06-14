@@ -40,10 +40,12 @@ void ZopfliInitCache(size_t blocksize, ZopfliLongestMatchCache* lmc) {
   }
 
   /* length > 0 and dist 0 is invalid combination, which indicates on purpose
-  that this cache value is not filled in yet. */
+  that this cache value is not filled in yet. sublen is intentionally left
+  uninitialized: ZopfliMaxCachedSublen keys off length == 0 (no match cached),
+  and the entries read for a real match are always written by ZopfliSublenToCache
+  before they are read back. */
   for (i = 0; i < blocksize; i++) lmc->length[i] = 1;
   for (i = 0; i < blocksize; i++) lmc->dist[i] = 0;
-  for (i = 0; i < ZOPFLI_CACHE_LENGTH * blocksize * 3; i++) lmc->sublen[i] = 0;
 }
 
 void ZopfliCleanCache(ZopfliLongestMatchCache* lmc) {
@@ -109,17 +111,16 @@ void ZopfliCacheToSublen(const ZopfliLongestMatchCache* lmc,
 }
 
 int ZopfliCacheSublenRuns(const ZopfliLongestMatchCache* lmc,
-                          size_t pos, size_t length,
+                          size_t pos, unsigned maxlen,
                           unsigned short* run_maxlen,
                           unsigned short* run_dist) {
-  unsigned maxlength = ZopfliMaxCachedSublen(lmc, pos, length);
   unsigned char* cache;
   size_t j;
   int n = 0;
 #if ZOPFLI_CACHE_LENGTH == 0
   return 0;
 #endif
-  if (length < 3) return 0;
+  if (maxlen < 3) return 0;
   cache = &lmc->sublen[ZOPFLI_CACHE_LENGTH * pos * 3];
   for (j = 0; j < ZOPFLI_CACHE_LENGTH; j++) {
     unsigned len = cache[j * 3] + 3;
@@ -127,7 +128,7 @@ int ZopfliCacheSublenRuns(const ZopfliLongestMatchCache* lmc,
     run_maxlen[n] = (unsigned short)len;
     run_dist[n] = (unsigned short)dist;
     n++;
-    if (len == maxlength) break;
+    if (len == maxlen) break;
   }
   return n;
 }
@@ -141,9 +142,11 @@ unsigned ZopfliMaxCachedSublen(const ZopfliLongestMatchCache* lmc,
 #if ZOPFLI_CACHE_LENGTH == 0
   return 0;
 #endif
+  /* length == 0 means no match is cached at this position, hence no sublen.
+  This replaces a sublen[1]==0 && sublen[2]==0 test so the sublen buffer no
+  longer needs zero-initializing (callers pass the cached length). */
+  if (length == 0) return 0;
   cache = &lmc->sublen[ZOPFLI_CACHE_LENGTH * pos * 3];
-  (void)length;
-  if (cache[1] == 0 && cache[2] == 0) return 0;  /* No sublen cached. */
   return cache[(ZOPFLI_CACHE_LENGTH - 1) * 3] + 3;
 }
 
