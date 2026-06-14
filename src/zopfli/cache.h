@@ -31,16 +31,22 @@ The cache that speeds up ZopfliFindLongestMatch of lz77.c.
 
 /*
 Cache used by ZopfliFindLongestMatch to remember previously found length/dist
-values.
-This is needed because the squeeze runs will ask these values multiple times for
-the same position.
-Uses large amounts of memory, since it has to remember the distance belonging
-to every possible shorter-than-the-best length (the so called "sublen" array).
+values. The sublen (best distance per shorter-than-best length) is stored as
+variable-length 3-byte runs (length-3, dist-lo, dist-hi) in a shared pool;
+run_off[pos] is a position's first run, ending at the run whose threshold equals
+length[pos]. Storing the complete sublen lets the squeeze DP serve every
+position from cache and skip rebuilding the hash after iteration 1.
+all_complete clears if a position overflows the pool budget (pathological
+input); those positions fall back to recomputation as over-cap ones did before.
 */
 typedef struct ZopfliLongestMatchCache {
   unsigned short* length;
   unsigned short* dist;
-  unsigned char* sublen;
+  unsigned char* pool;  /* Shared run pool, 3 bytes per run. */
+  unsigned* run_off;  /* Per pos: first run index in pool, or LMC_NO_SUBLEN. */
+  size_t pool_used;  /* Next free run slot. */
+  size_t pool_cap;  /* Pool capacity in runs. */
+  int all_complete;  /* 1 while every cached position has its full sublen. */
 } ZopfliLongestMatchCache;
 
 /* Initializes the ZopfliLongestMatchCache. */
@@ -58,18 +64,6 @@ void ZopfliSublenToCache(const unsigned short* sublen,
 void ZopfliCacheToSublen(const ZopfliLongestMatchCache* lmc,
                          size_t pos, size_t length,
                          unsigned short* sublen);
-
-/*
-Extracts the cached sublen as compact runs instead of a full array: run r covers
-lengths up to and including run_maxlen[r] at distance run_dist[r] (the lower
-bound is the previous run's max + 1, or 3 for the first run). maxlen is the
-already-computed ZopfliMaxCachedSublen for this position. Returns the run count
-(<= ZOPFLI_CACHE_LENGTH). Lets callers consume the cache without materializing
-all sublen entries. run_maxlen/run_dist must hold ZOPFLI_CACHE_LENGTH entries.
-*/
-int ZopfliCacheSublenRuns(const ZopfliLongestMatchCache* lmc,
-                          size_t pos, unsigned maxlen,
-                          unsigned short* run_maxlen, unsigned short* run_dist);
 
 /* Returns the length up to which could be stored in the cache. */
 unsigned ZopfliMaxCachedSublen(const ZopfliLongestMatchCache* lmc,

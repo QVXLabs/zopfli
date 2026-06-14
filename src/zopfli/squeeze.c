@@ -256,7 +256,8 @@ static ZopfliCost GetBestLengths(ZopfliBlockState *s,
                                     const CostCache* cache,
                                     unsigned short* length_array,
                                     unsigned short* dist_array,
-                                    ZopfliHash* h, ZopfliCost* costs) {
+                                    ZopfliHash* h, ZopfliCost* costs,
+                                    int build_hash) {
   /* Best cost to get here so far. */
   size_t blocksize = inend - instart;
   size_t i = 0, k, kend;
@@ -271,10 +272,16 @@ static ZopfliCost GetBestLengths(ZopfliBlockState *s,
 
   if (instart == inend) return 0;
 
-  ZopfliResetHash(ZOPFLI_WINDOW_SIZE, h);
-  ZopfliWarmupHash(in, windowstart, inend, h);
-  for (i = windowstart; i < instart; i++) {
-    ZopfliUpdateHash(in, i, inend, h);
+  /* The hash is a pure function of the input, so once the longest-match cache
+  holds every position's full sublen (all_complete), later iterations serve
+  every position from cache and never read the hash. build_hash is then 0 and
+  the whole rebuild is skipped. */
+  if (build_hash) {
+    ZopfliResetHash(ZOPFLI_WINDOW_SIZE, h);
+    ZopfliWarmupHash(in, windowstart, inend, h);
+    for (i = windowstart; i < instart; i++) {
+      ZopfliUpdateHash(in, i, inend, h);
+    }
   }
 
   for (i = 1; i < blocksize + 1; i++) costs[i] = ZOPFLI_COST_SENTINEL;
@@ -284,12 +291,14 @@ static ZopfliCost GetBestLengths(ZopfliBlockState *s,
 
   for (i = instart; i < inend; i++) {
     size_t j = i - instart;  /* Index in the costs array and length_array. */
-    ZopfliUpdateHash(in, i, inend, h);
+    if (build_hash) ZopfliUpdateHash(in, i, inend, h);
 
 #ifdef ZOPFLI_SHORTCUT_LONG_REPETITIONS
     /* If we're in a long repetition of the same character and have more than
-    ZOPFLI_MAX_MATCH characters before and after our position. */
-    if (h->same[i & ZOPFLI_WINDOW_MASK] > ZOPFLI_MAX_MATCH * 2
+    ZOPFLI_MAX_MATCH characters before and after our position. Skipped when the
+    hash isn't built; the cache fast path produces identical costs for these. */
+    if (build_hash
+        && h->same[i & ZOPFLI_WINDOW_MASK] > ZOPFLI_MAX_MATCH * 2
         && i > instart + ZOPFLI_MAX_MATCH + 1
         && i + ZOPFLI_MAX_MATCH * 2 + 1 < inend
         && h->same[(i - ZOPFLI_MAX_MATCH) & ZOPFLI_WINDOW_MASK]
@@ -297,6 +306,9 @@ static ZopfliCost GetBestLengths(ZopfliBlockState *s,
       /* Cost of a ZOPFLI_MAX_MATCH match at distance 1 (dist symbol 0). */
       ZopfliCost symbolcost = cache->ll_cost[ZOPFLI_MAX_MATCH]
           + cache->d_cost[0];
+      /* The skipped positions are never stored in the cache, so this block is
+      not fully cacheable: keep building the hash on every iteration. */
+      if (s->lmc) s->lmc->all_complete = 0;
       /* Set the length to reach each one to ZOPFLI_MAX_MATCH, and the cost to
       the cost corresponding to that length. Doing this, we skip
       ZOPFLI_MAX_MATCH values to avoid calling ZopfliFindLongestMatch. */
@@ -339,29 +351,35 @@ static ZopfliCost GetBestLengths(ZopfliBlockState *s,
       unsigned maxsub = avail ?
           ZopfliMaxCachedSublen(s->lmc, lmcpos, cachedlen) : 0;
       if (avail && cachedlen <= maxsub) {
-        unsigned short run_maxlen[ZOPFLI_CACHE_LENGTH];
-        unsigned short run_dist[ZOPFLI_CACHE_LENGTH];
-        int nruns = ZopfliCacheSublenRuns(s->lmc, lmcpos, maxsub,
-                                          run_maxlen, run_dist);
-        size_t klo = 3;
-        int r;
-        kend = zopfli_min((size_t)cachedlen, inend - i);
-        for (r = 0; r < nruns && klo <= kend; r++) {
-          size_t khi = run_maxlen[r];
-          if (khi > kend) khi = kend;
-          if (klo <= khi) {
-            ZopfliCost dcost = cache->d_cost[ZopfliGetDistSymbol(run_dist[r])];
-            UpdateCostForRange(costs, length_array, dist_array, j, klo, khi,
-                               run_dist[r], dcost, cache, costs[j],
-                               mincostaddcostj);
+        /* Walk this position's runs straight from the shared pool. The last
+        run's threshold is cachedlen, so the klo > kend test always terminates
+        before reading past it. */
+        if (cachedlen >= ZOPFLI_MIN_MATCH) {
+          const unsigned char* run =
+              &s->lmc->pool[(size_t)s->lmc->run_off[lmcpos] * 3];
+          size_t klo;
+          kend = zopfli_min((size_t)cachedlen, inend - i);
+          for (klo = 3; klo <= kend; run += 3) {
+            size_t runlen = (size_t)run[0] + 3;
+            unsigned short rundist = (unsigned short)(run[1] + 256 * run[2]);
+            size_t khi = runlen > kend ? kend : runlen;
+            if (klo <= khi) {
+              ZopfliCost dcost = cache->d_cost[ZopfliGetDistSymbol(rundist)];
+              UpdateCostForRange(costs, length_array, dist_array, j, klo, khi,
+                                 rundist, dcost, cache, costs[j],
+                                 mincostaddcostj);
+            }
+            klo = runlen + 1;
           }
-          klo = (size_t)run_maxlen[r] + 1;
         }
         continue;
       }
     }
 #endif
 
+    /* Reaching the slow path means this position wasn't fully cached, so the
+    hash must have been built this pass. */
+    assert(build_hash);
     ZopfliFindLongestMatch(s, h, in, i, inend, ZOPFLI_MAX_MATCH, sublen,
                            &dist, &leng);
 
@@ -487,9 +505,9 @@ static ZopfliCost LZ77OptimalRun(ZopfliBlockState* s,
     unsigned short** path, size_t* pathsize,
     unsigned short* length_array, unsigned short* dist_array,
     const CostCache* cache, ZopfliLZ77Store* store,
-    ZopfliHash* h, ZopfliCost* costs) {
+    ZopfliHash* h, ZopfliCost* costs, int build_hash) {
   ZopfliCost cost = GetBestLengths(s, in, instart, inend, cache,
-                length_array, dist_array, h, costs);
+                length_array, dist_array, h, costs, build_hash);
   free(*path);
   *path = 0;
   *pathsize = 0;
@@ -526,6 +544,7 @@ void ZopfliLZ77Optimal(ZopfliBlockState *s,
   /* Try randomizing the costs a bit once the size stabilizes. */
   RanState ran_state;
   int lastrandomstep = -1;
+  int build_hash;
 
   if (!costs) exit(-1); /* Allocation failed. */
   if (!length_array) exit(-1); /* Allocation failed. */
@@ -544,12 +563,15 @@ void ZopfliLZ77Optimal(ZopfliBlockState *s,
   GetStatistics(&currentstore, &stats);
 
   /* Repeat statistics with each time the cost model from the previous stat
-  run. */
+  run. Iteration 0 fills the cache gaps the greedy pass left, so it needs the
+  hash; later iterations skip it once the cache holds every position. */
+  build_hash = 1;
   for (i = 0; i < numiterations; i++) {
     ZopfliResetLZ77Store(&currentstore);
     BuildStatCostCache(&stats, shift, &cache);
-    LZ77OptimalRun(s, in, instart, inend, &path, &pathsize,
-                   length_array, dist_array, &cache, &currentstore, h, costs);
+    LZ77OptimalRun(s, in, instart, inend, &path, &pathsize, length_array,
+                   dist_array, &cache, &currentstore, h, costs, build_hash);
+    if (i == 0) build_hash = !(s->lmc && s->lmc->all_complete);
     cost = ZopfliCalculateBlockSizeScratch(&s->katascratch, &currentstore, 0,
                                            currentstore.size, 2);
     if (s->options->verbose_more || (s->options->verbose && cost < bestcost)) {
@@ -620,7 +642,7 @@ void ZopfliLZ77OptimalFixed(ZopfliBlockState *s,
   result for fixed tree, no repeated runs are needed since the tree is known. */
   BuildFixedCostCache(ZopfliGetCostShift(blocksize), &cache);
   LZ77OptimalRun(s, in, instart, inend, &path, &pathsize,
-                 length_array, dist_array, &cache, store, h, costs);
+                 length_array, dist_array, &cache, store, h, costs, 1);
 
   free(length_array);
   free(dist_array);

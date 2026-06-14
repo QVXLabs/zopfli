@@ -59,10 +59,13 @@ This repo is an optimization effort. For any perf change:
   forward in `dist_array` alongside `length_array`.
 - Regimes differ: default iterations are match-finding + katajainen bound; high
   iterations are squeeze-inner-loop + hash bound.
-- The remaining `GetBestLengths` per-byte `ZopfliUpdateHash` (~20% high-iter)
-  cannot be safely skipped: `ZopfliFindLongestMatch` can still miss the
-  longest-match cache (matches with >8 distinct sub-distances overflow the
-  8-entry sublen cache), and the `prev[]` chain is all-or-nothing per pass.
+- `ZopfliUpdateHash` now runs only in the greedy pass and DP iteration 0. The
+  LMC stores the *complete* sublen as variable-length runs (`cache.c`:
+  `run_off` + `pool`, `all_complete`), so once a block is fully cached the
+  squeeze DP serves every position from cache and `GetBestLengths` skips the
+  whole hash rebuild for iterations ≥2 (`build_hash` flag). Blocks using the
+  long-repetition shortcut or overflowing the pool budget keep `all_complete=0`
+  and rebuild the hash every iteration, as before.
 
 ## Tried and rejected (don't redo without new evidence)
 - `static inline` of `ZopfliUpdateHash`: measured ~3% but reverted — not worth

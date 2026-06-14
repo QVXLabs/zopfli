@@ -415,7 +415,7 @@ Stores the found sublen, distance and length in the longest match cache, if
 possible.
 */
 static void StoreInLongestMatchCache(ZopfliBlockState* s,
-    size_t pos, size_t limit,
+    size_t pos, size_t limit, size_t size,
     const unsigned short* sublen,
     unsigned short distance, unsigned short length) {
   /* The LMC cache starts at the beginning of the block rather than the
@@ -427,7 +427,12 @@ static void StoreInLongestMatchCache(ZopfliBlockState* s,
   unsigned char cache_available = s->lmc && (s->lmc->length[lmcpos] == 0 ||
       s->lmc->dist[lmcpos] != 0);
 
-  if (s->lmc && limit == ZOPFLI_MAX_MATCH && sublen && !cache_available) {
+  /* Cache full-limit matches, and also end-of-block positions where the limit
+     was clamped to size - pos: there the stored match is the true maximum (it
+     physically can't be longer), so the sublen is complete. Caching these lets
+     the squeeze DP serve every position and skip the hash after iteration 1. */
+  if (s->lmc && (limit == ZOPFLI_MAX_MATCH || pos + limit >= size)
+      && sublen && !cache_available) {
     assert(s->lmc->length[lmcpos] == 1 && s->lmc->dist[lmcpos] == 0);
     s->lmc->dist[lmcpos] = length < ZOPFLI_MIN_MATCH ? 0 : distance;
     s->lmc->length[lmcpos] = length < ZOPFLI_MIN_MATCH ? 0 : length;
@@ -475,6 +480,10 @@ void ZopfliFindLongestMatch(ZopfliBlockState* s, const ZopfliHash* h,
        try. */
     *length = 0;
     *distance = 0;
+#ifdef ZOPFLI_LONGEST_MATCH_CACHE
+    /* Cache the no-match so the squeeze DP can serve this position too. */
+    StoreInLongestMatchCache(s, pos, limit, size, sublen, 0, 0);
+#endif
     return;
   }
 
@@ -564,7 +573,7 @@ void ZopfliFindLongestMatch(ZopfliBlockState* s, const ZopfliHash* h,
   }
 
 #ifdef ZOPFLI_LONGEST_MATCH_CACHE
-  StoreInLongestMatchCache(s, pos, limit, sublen, bestdist, bestlength);
+  StoreInLongestMatchCache(s, pos, limit, size, sublen, bestdist, bestlength);
 #endif
 
   assert(bestlength <= limit);

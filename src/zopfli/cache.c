@@ -26,24 +26,31 @@ Author: afalls@qvxlabs.com (Ardavon Falls)
 
 #ifdef ZOPFLI_LONGEST_MATCH_CACHE
 
+/* run_off sentinel: this position has no full sublen stored (pool overflow). */
+#define LMC_NO_SUBLEN ((unsigned)-1)
+
 void ZopfliInitCache(size_t blocksize, ZopfliLongestMatchCache* lmc) {
   size_t i;
   lmc->length = (unsigned short*)malloc(sizeof(unsigned short) * blocksize);
   lmc->dist = (unsigned short*)malloc(sizeof(unsigned short) * blocksize);
-  /* Rather large amount of memory. */
-  lmc->sublen = (unsigned char*)malloc(ZOPFLI_CACHE_LENGTH * 3 * blocksize);
-  if(lmc->sublen == NULL) {
+  lmc->run_off = (unsigned*)malloc(sizeof(unsigned) * blocksize);
+  /* Same byte budget as the old fixed cache, used now as a shared run pool. */
+  lmc->pool_cap = (size_t)ZOPFLI_CACHE_LENGTH * blocksize;
+  lmc->pool_used = 0;
+  lmc->all_complete = 1;
+  lmc->pool = (unsigned char*)malloc(3 * lmc->pool_cap);
+  if (lmc->pool == NULL || lmc->run_off == NULL) {
     fprintf(stderr,
         "Error: Out of memory. Tried allocating %lu bytes of memory.\n",
-        (unsigned long)ZOPFLI_CACHE_LENGTH * 3 * blocksize);
+        (unsigned long)(3 * lmc->pool_cap));
     exit (EXIT_FAILURE);
   }
 
   /* length > 0 and dist 0 is invalid combination, which indicates on purpose
-  that this cache value is not filled in yet. sublen is intentionally left
-  uninitialized: ZopfliMaxCachedSublen keys off length == 0 (no match cached),
-  and the entries read for a real match are always written by ZopfliSublenToCache
-  before they are read back. */
+  that this cache value is not filled in yet. pool and run_off are intentionally
+  left uninitialized: ZopfliMaxCachedSublen keys off length == 0 (no match
+  cached), and run_off is only read for a real match, always written by
+  ZopfliSublenToCache before being read back. */
   for (i = 0; i < blocksize; i++) lmc->length[i] = 1;
   for (i = 0; i < blocksize; i++) lmc->dist[i] = 0;
 }
@@ -51,86 +58,71 @@ void ZopfliInitCache(size_t blocksize, ZopfliLongestMatchCache* lmc) {
 void ZopfliCleanCache(ZopfliLongestMatchCache* lmc) {
   free(lmc->length);
   free(lmc->dist);
-  free(lmc->sublen);
+  free(lmc->pool);
+  free(lmc->run_off);
 }
 
 void ZopfliSublenToCache(const unsigned short* sublen,
                          size_t pos, size_t length,
                          ZopfliLongestMatchCache* lmc) {
   size_t i;
-  size_t j = 0;
-  unsigned bestlength = 0;
-  unsigned char* cache;
+  size_t nruns = 0;
+  unsigned char* run;
 
 #if ZOPFLI_CACHE_LENGTH == 0
   return;
 #endif
 
-  cache = &lmc->sublen[ZOPFLI_CACHE_LENGTH * pos * 3];
   if (length < 3) return;
+
+  /* Count the distinct-distance runs this position needs. */
+  for (i = 3; i <= length; i++) {
+    if (i == length || sublen[i] != sublen[i + 1]) nruns++;
+  }
+
+  /* Overflow: keep within the pool budget. Mark incomplete and fall back to
+  recomputation for this position (as an over-cap position did before). */
+  if (lmc->pool_used + nruns > lmc->pool_cap) {
+    lmc->all_complete = 0;
+    lmc->run_off[pos] = LMC_NO_SUBLEN;
+    return;
+  }
+
+  lmc->run_off[pos] = (unsigned)lmc->pool_used;
+  run = &lmc->pool[lmc->pool_used * 3];
   for (i = 3; i <= length; i++) {
     if (i == length || sublen[i] != sublen[i + 1]) {
-      cache[j * 3] = i - 3;
-      cache[j * 3 + 1] = sublen[i] % 256;
-      cache[j * 3 + 2] = (sublen[i] >> 8) % 256;
-      bestlength = i;
-      j++;
-      if (j >= ZOPFLI_CACHE_LENGTH) break;
+      run[0] = (unsigned char)(i - 3);
+      run[1] = sublen[i] % 256;
+      run[2] = (sublen[i] >> 8) % 256;
+      run += 3;
     }
   }
-  if (j < ZOPFLI_CACHE_LENGTH) {
-    assert(bestlength == length);
-    cache[(ZOPFLI_CACHE_LENGTH - 1) * 3] = bestlength - 3;
-  } else {
-    assert(bestlength <= length);
-  }
-  assert(bestlength == ZopfliMaxCachedSublen(lmc, pos, length));
+  lmc->pool_used += nruns;
 }
 
 void ZopfliCacheToSublen(const ZopfliLongestMatchCache* lmc,
                          size_t pos, size_t length,
                          unsigned short* sublen) {
-  size_t i, j;
-  unsigned maxlength = ZopfliMaxCachedSublen(lmc, pos, length);
+  size_t i;
   unsigned prevlength = 0;
-  unsigned char* cache;
+  unsigned char* run;
 #if ZOPFLI_CACHE_LENGTH == 0
   return;
 #endif
   if (length < 3) return;
-  cache = &lmc->sublen[ZOPFLI_CACHE_LENGTH * pos * 3];
-  for (j = 0; j < ZOPFLI_CACHE_LENGTH; j++) {
-    unsigned length = cache[j * 3] + 3;
-    unsigned dist = cache[j * 3 + 1] + 256 * cache[j * 3 + 2];
-    for (i = prevlength; i <= length; i++) {
+  run = &lmc->pool[(size_t)lmc->run_off[pos] * 3];
+  for (;;) {
+    unsigned runlen = run[0] + 3;
+    unsigned dist = run[1] + 256 * run[2];
+    unsigned hi = runlen < length ? runlen : (unsigned)length;
+    for (i = prevlength; i <= hi; i++) {
       sublen[i] = dist;
     }
-    if (length == maxlength) break;
-    prevlength = length + 1;
+    if (runlen >= length) break;
+    prevlength = runlen + 1;
+    run += 3;
   }
-}
-
-int ZopfliCacheSublenRuns(const ZopfliLongestMatchCache* lmc,
-                          size_t pos, unsigned maxlen,
-                          unsigned short* run_maxlen,
-                          unsigned short* run_dist) {
-  unsigned char* cache;
-  size_t j;
-  int n = 0;
-#if ZOPFLI_CACHE_LENGTH == 0
-  return 0;
-#endif
-  if (maxlen < 3) return 0;
-  cache = &lmc->sublen[ZOPFLI_CACHE_LENGTH * pos * 3];
-  for (j = 0; j < ZOPFLI_CACHE_LENGTH; j++) {
-    unsigned len = cache[j * 3] + 3;
-    unsigned dist = cache[j * 3 + 1] + 256 * cache[j * 3 + 2];
-    run_maxlen[n] = (unsigned short)len;
-    run_dist[n] = (unsigned short)dist;
-    n++;
-    if (len == maxlen) break;
-  }
-  return n;
 }
 
 /*
@@ -138,16 +130,15 @@ Returns the length up to which could be stored in the cache.
 */
 unsigned ZopfliMaxCachedSublen(const ZopfliLongestMatchCache* lmc,
                                size_t pos, size_t length) {
-  unsigned char* cache;
 #if ZOPFLI_CACHE_LENGTH == 0
   return 0;
 #endif
-  /* length == 0 means no match is cached at this position, hence no sublen.
-  This replaces a sublen[1]==0 && sublen[2]==0 test so the sublen buffer no
-  longer needs zero-initializing (callers pass the cached length). */
+  /* length == 0 means no match is cached; LMC_NO_SUBLEN means the position
+  overflowed the pool and has no full sublen. Otherwise the stored runs cover
+  the whole match, so the max cached sublen is exactly length. */
   if (length == 0) return 0;
-  cache = &lmc->sublen[ZOPFLI_CACHE_LENGTH * pos * 3];
-  return cache[(ZOPFLI_CACHE_LENGTH - 1) * 3] + 3;
+  if (lmc->run_off[pos] == LMC_NO_SUBLEN) return 0;
+  return (unsigned)length;
 }
 
 #endif  /* ZOPFLI_LONGEST_MATCH_CACHE */
