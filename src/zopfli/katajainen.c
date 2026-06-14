@@ -15,6 +15,7 @@ limitations under the License.
 
 Author: lode.vandevenne@gmail.com (Lode Vandevenne)
 Author: jyrki.alakuijala@gmail.com (Jyrki Alakuijala)
+Author: afalls@qvxlabs.com (Ardavon Falls)
 */
 
 /*
@@ -163,10 +164,28 @@ static void ExtractBitLengths(Node* chain, Node* leaves, unsigned* bitlengths) {
 }
 
 /*
-Comparator for sorting the leaves. Has the function signature for qsort.
+Sorts leaves ascending by weight. The symbol index is packed into the low bits
+of weight, so all keys are distinct and the order is unique. Inlined shell sort
+(in-place, no recursion) avoids qsort's per-comparison indirect call.
 */
-static int LeafComparator(const void* a, const void* b) {
-  return ((const Node*)a)->weight - ((const Node*)b)->weight;
+static void SortLeaves(Node* leaves, int num) {
+  /* Knuth gaps ((3^k - 1) / 2). Capped at 121: the start gap is < num and num
+     <= 288 (ZOPFLI_NUM_LL), so larger gaps never apply. Still correct if not. */
+  static const int kGaps[] = { 1, 4, 13, 40, 121 };
+  int g = (int)(sizeof(kGaps) / sizeof(kGaps[0])) - 1;
+  /* Start at the largest gap smaller than num. */
+  for (; g > 0 && kGaps[g] >= num; g--) { }
+  for (; g >= 0; g--) {
+    int i, gap = kGaps[g];
+    for (i = gap; i < num; i++) {
+      Node tmp = leaves[i];
+      int j;
+      for (j = i; j >= gap && leaves[j - gap].weight > tmp.weight; j -= gap) {
+        leaves[j] = leaves[j - gap];
+      }
+      leaves[j] = tmp;
+    }
+  }
 }
 
 int ZopfliLengthLimitedCodeLengths(
@@ -229,7 +248,7 @@ int ZopfliLengthLimitedCodeLengths(
     }
     leaves[i].weight = (leaves[i].weight << 9) | leaves[i].count;
   }
-  qsort(leaves, numsymbols, sizeof(Node), LeafComparator);
+  SortLeaves(leaves, numsymbols);
   for (i = 0; i < numsymbols; i++) {
     leaves[i].weight >>= 9;
   }

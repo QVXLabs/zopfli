@@ -19,8 +19,10 @@ else
   shared_soname = lib$(1).so.$(VERSION_MAJOR)
 endif
 
-override CFLAGS := -W -Wall -Wextra -ansi -pedantic -O3 -Wno-unused-function -fPIC $(CFLAGS)
-override CXXFLAGS := -W -Wall -Wextra -ansi -pedantic -O3 -fPIC $(CXXFLAGS)
+# NDEBUG strips asserts and the ZopfliVerifyLenDist check for the release build.
+# User CFLAGS are appended after, so `make CFLAGS=-UNDEBUG` re-enables them.
+override CFLAGS := -W -Wall -Wextra -ansi -pedantic -O3 -DNDEBUG -Wno-unused-function -fPIC $(CFLAGS)
+override CXXFLAGS := -W -Wall -Wextra -ansi -pedantic -O3 -DNDEBUG -fPIC $(CXXFLAGS)
 LDLIBS := -lm $(LDLIBS)
 
 ZOPFLILIB_SRC = src/zopfli/blocksplitter.c src/zopfli/cache.c\
