@@ -222,6 +222,7 @@ void ZopfliInitBlockState(const ZopfliOptions* options,
   s->options = options;
   s->blockstart = blockstart;
   s->blockend = blockend;
+  ZopfliInitKatajainenScratch(&s->katascratch);
 #ifdef ZOPFLI_LONGEST_MATCH_CACHE
   if (add_lmc) {
     s->lmc = (ZopfliLongestMatchCache*)malloc(sizeof(ZopfliLongestMatchCache));
@@ -233,6 +234,7 @@ void ZopfliInitBlockState(const ZopfliOptions* options,
 }
 
 void ZopfliCleanBlockState(ZopfliBlockState* s) {
+  ZopfliCleanKatajainenScratch(&s->katascratch);
 #ifdef ZOPFLI_LONGEST_MATCH_CACHE
   if (s->lmc) {
     ZopfliCleanCache(s->lmc);

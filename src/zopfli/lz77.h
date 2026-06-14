@@ -29,6 +29,7 @@ compression.
 
 #include "cache.h"
 #include "hash.h"
+#include "katajainen.h"
 #include "zopfli.h"
 
 /*
@@ -94,6 +95,11 @@ typedef struct ZopfliBlockState {
   /* The start (inclusive) and end (not inclusive) of the current block. */
   size_t blockstart;
   size_t blockend;
+
+  /* Reused scratch for length-limited Huffman code construction, so the hot
+  block-size evaluations don't malloc/free per call. Per block state, so
+  thread-safe. */
+  ZopfliKatajainenScratch katascratch;
 } ZopfliBlockState;
 
 void ZopfliInitBlockState(const ZopfliOptions* options,

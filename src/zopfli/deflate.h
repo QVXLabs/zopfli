@@ -80,10 +80,25 @@ double ZopfliCalculateBlockSize(const ZopfliLZ77Store* lz77,
                                 size_t lstart, size_t lend, int btype);
 
 /*
+As ZopfliCalculateBlockSize, but reuses caller-owned scratch (thread-safe when
+each thread passes its own).
+*/
+double ZopfliCalculateBlockSizeScratch(ZopfliKatajainenScratch* scratch,
+                                       const ZopfliLZ77Store* lz77,
+                                       size_t lstart, size_t lend, int btype);
+
+/*
 Calculates block size in bits, automatically using the best btype.
 */
 double ZopfliCalculateBlockSizeAutoType(const ZopfliLZ77Store* lz77,
                                         size_t lstart, size_t lend);
+
+/*
+As ZopfliCalculateBlockSizeAutoType, but reuses caller-owned scratch.
+*/
+double ZopfliCalculateBlockSizeAutoTypeScratch(
+    ZopfliKatajainenScratch* scratch,
+    const ZopfliLZ77Store* lz77, size_t lstart, size_t lend);
 
 #ifdef __cplusplus
 }  // extern "C"

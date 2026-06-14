@@ -26,12 +26,22 @@ Utilities for creating and using Huffman trees.
 
 #include <string.h>
 
+#include "katajainen.h"
+
 /*
 Calculates the bitlengths for the Huffman tree, based on the counts of each
 symbol.
 */
 void ZopfliCalculateBitLengths(const size_t* count, size_t n, int maxbits,
                                unsigned *bitlengths);
+
+/*
+As ZopfliCalculateBitLengths, but reuses caller-owned scratch (thread-safe when
+each thread passes its own).
+*/
+void ZopfliCalculateBitLengthsScratch(ZopfliKatajainenScratch* scratch,
+                                      const size_t* count, size_t n, int maxbits,
+                                      unsigned *bitlengths);
 
 /*
 Converts a series of Huffman tree bitlengths, to the bit values of the symbols.

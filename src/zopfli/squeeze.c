@@ -500,7 +500,8 @@ void ZopfliLZ77Optimal(ZopfliBlockState *s,
     BuildStatCostCache(&stats, shift, &cache);
     LZ77OptimalRun(s, in, instart, inend, &path, &pathsize,
                    length_array, dist_array, &cache, &currentstore, h, costs);
-    cost = ZopfliCalculateBlockSize(&currentstore, 0, currentstore.size, 2);
+    cost = ZopfliCalculateBlockSizeScratch(&s->katascratch, &currentstore, 0,
+                                           currentstore.size, 2);
     if (s->options->verbose_more || (s->options->verbose && cost < bestcost)) {
       fprintf(stderr, "Iteration %d: %d bit\n", i, (int) cost);
     }

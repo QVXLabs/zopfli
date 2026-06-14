@@ -105,13 +105,15 @@ dists: ll77 distances
 lstart: start of block
 lend: end of block (not inclusive)
 */
-static double EstimateCost(const ZopfliLZ77Store* lz77,
+static double EstimateCost(ZopfliKatajainenScratch* scratch,
+                           const ZopfliLZ77Store* lz77,
                            size_t lstart, size_t lend) {
-  return ZopfliCalculateBlockSizeAutoType(lz77, lstart, lend);
+  return ZopfliCalculateBlockSizeAutoTypeScratch(scratch, lz77, lstart, lend);
 }
 
 typedef struct SplitCostContext {
   const ZopfliLZ77Store* lz77;
+  ZopfliKatajainenScratch* scratch;
   size_t start;
   size_t end;
 } SplitCostContext;
@@ -124,7 +126,8 @@ type: FindMinimumFun
 */
 static double SplitCost(size_t i, void* context) {
   SplitCostContext* c = (SplitCostContext*)context;
-  return EstimateCost(c->lz77, c->start, i) + EstimateCost(c->lz77, i, c->end);
+  return EstimateCost(c->scratch, c->lz77, c->start, i)
+      + EstimateCost(c->scratch, c->lz77, i, c->end);
 }
 
 static void AddSorted(size_t value, size_t** out, size_t* outsize) {
@@ -221,8 +224,12 @@ void ZopfliBlockSplitLZ77(const ZopfliOptions* options,
   size_t numblocks = 1;
   unsigned char* done;
   double splitcost, origcost;
+  /* Reused across all block-size evaluations of this split. */
+  ZopfliKatajainenScratch scratch;
 
   if (lz77->size < 10) return;  /* This code fails on tiny files. */
+
+  ZopfliInitKatajainenScratch(&scratch);
 
   done = (unsigned char*)malloc(lz77->size);
   if (!done) exit(-1); /* Allocation failed. */
@@ -238,6 +245,7 @@ void ZopfliBlockSplitLZ77(const ZopfliOptions* options,
     }
 
     c.lz77 = lz77;
+    c.scratch = &scratch;
     c.start = lstart;
     c.end = lend;
     assert(lstart < lend);
@@ -246,7 +254,7 @@ void ZopfliBlockSplitLZ77(const ZopfliOptions* options,
     assert(llpos > lstart);
     assert(llpos < lend);
 
-    origcost = EstimateCost(lz77, lstart, lend);
+    origcost = EstimateCost(&scratch, lz77, lstart, lend);
 
     if (splitcost > origcost || llpos == lstart + 1 || llpos == lend) {
       done[lstart] = 1;
@@ -269,6 +277,7 @@ void ZopfliBlockSplitLZ77(const ZopfliOptions* options,
     PrintBlockSplitPoints(lz77, *splitpoints, *npoints);
   }
 
+  ZopfliCleanKatajainenScratch(&scratch);
   free(done);
 }
 

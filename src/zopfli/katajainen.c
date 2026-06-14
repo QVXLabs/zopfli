@@ -188,7 +188,33 @@ static void SortLeaves(Node* leaves, int num) {
   }
 }
 
-int ZopfliLengthLimitedCodeLengths(
+void ZopfliInitKatajainenScratch(ZopfliKatajainenScratch* scratch) {
+  scratch->leaves = 0;
+  scratch->leaves_cap = 0;
+  scratch->nodes = 0;
+  scratch->nodes_cap = 0;
+  scratch->lists = 0;
+  scratch->lists_cap = 0;
+}
+
+void ZopfliCleanKatajainenScratch(ZopfliKatajainenScratch* scratch) {
+  free(scratch->leaves);
+  free(scratch->nodes);
+  free(scratch->lists);
+}
+
+/* Grows *buf to hold at least 'need' Nodes, reusing it across calls. */
+static Node* EnsureNodes(void** buf, size_t* cap, size_t need) {
+  if (need > *cap) {
+    free(*buf);
+    *buf = malloc(need * sizeof(Node));
+    *cap = *buf ? need : 0;
+  }
+  return (Node*)*buf;
+}
+
+int ZopfliLengthLimitedCodeLengthsScratch(
+    ZopfliKatajainenScratch* scratch,
     const size_t* frequencies, int n, int maxbits, unsigned* bitlengths) {
   NodePool pool;
   int i;
@@ -201,7 +227,7 @@ int ZopfliLengthLimitedCodeLengths(
   Node* (*lists)[2];
 
   /* One leaf per symbol. Only numsymbols leaves will be used. */
-  Node* leaves = (Node*)malloc(n * sizeof(*leaves));
+  Node* leaves = EnsureNodes(&scratch->leaves, &scratch->leaves_cap, (size_t)n);
 
   /* Initialize all bitlengths at 0. */
   for (i = 0; i < n; i++) {
@@ -217,24 +243,21 @@ int ZopfliLengthLimitedCodeLengths(
     }
   }
 
-  /* Check special cases and error conditions. */
+  /* Check special cases and error conditions. Scratch is caller-owned, so these
+  just return. */
   if ((1 << maxbits) < numsymbols) {
-    free(leaves);
     return 1;  /* Error, too few maxbits to represent symbols. */
   }
   if (numsymbols == 0) {
-    free(leaves);
     return 0;  /* No symbols at all. OK. */
   }
   if (numsymbols == 1) {
     bitlengths[leaves[0].count] = 1;
-    free(leaves);
     return 0;  /* Only one symbol, give it bitlength 1, not 0. OK. */
   }
   if (numsymbols == 2) {
     bitlengths[leaves[0].count]++;
     bitlengths[leaves[1].count]++;
-    free(leaves);
     return 0;
   }
 
@@ -243,7 +266,6 @@ int ZopfliLengthLimitedCodeLengths(
   for (i = 0; i < numsymbols; i++) {
     if (leaves[i].weight >=
         ((size_t)1 << (sizeof(leaves[0].weight) * CHAR_BIT - 9))) {
-      free(leaves);
       return 1;  /* Error, we need 9 bits for the count. */
     }
     leaves[i].weight = (leaves[i].weight << 9) | leaves[i].count;
@@ -258,10 +280,16 @@ int ZopfliLengthLimitedCodeLengths(
   }
 
   /* Initialize node memory pool. */
-  nodes = (Node*)malloc(maxbits * 2 * numsymbols * sizeof(Node));
+  nodes = EnsureNodes(&scratch->nodes, &scratch->nodes_cap,
+                      (size_t)maxbits * 2 * (size_t)numsymbols);
   pool.next = nodes;
 
-  lists = (Node* (*)[2])malloc(maxbits * sizeof(*lists));
+  if ((size_t)maxbits > scratch->lists_cap) {
+    free(scratch->lists);
+    scratch->lists = malloc((size_t)maxbits * 2 * sizeof(Node*));
+    scratch->lists_cap = scratch->lists ? (size_t)maxbits : 0;
+  }
+  lists = (Node* (*)[2])scratch->lists;
   InitLists(&pool, leaves, maxbits, lists);
 
   /* In the last list, 2 * numsymbols - 2 active chains need to be created. Two
@@ -274,8 +302,16 @@ int ZopfliLengthLimitedCodeLengths(
 
   ExtractBitLengths(lists[maxbits - 1][1], leaves, bitlengths);
 
-  free(lists);
-  free(leaves);
-  free(nodes);
   return 0;  /* OK. */
+}
+
+int ZopfliLengthLimitedCodeLengths(
+    const size_t* frequencies, int n, int maxbits, unsigned* bitlengths) {
+  ZopfliKatajainenScratch scratch;
+  int result;
+  ZopfliInitKatajainenScratch(&scratch);
+  result = ZopfliLengthLimitedCodeLengthsScratch(
+      &scratch, frequencies, n, maxbits, bitlengths);
+  ZopfliCleanKatajainenScratch(&scratch);
+  return result;
 }

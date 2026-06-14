@@ -93,9 +93,19 @@ void ZopfliCalculateEntropy(const size_t* count, size_t n, double* bitlengths) {
   }
 }
 
-void ZopfliCalculateBitLengths(const size_t* count, size_t n, int maxbits,
-                               unsigned* bitlengths) {
-  int error = ZopfliLengthLimitedCodeLengths(count, n, maxbits, bitlengths);
+void ZopfliCalculateBitLengthsScratch(ZopfliKatajainenScratch* scratch,
+                                      const size_t* count, size_t n, int maxbits,
+                                      unsigned* bitlengths) {
+  int error = ZopfliLengthLimitedCodeLengthsScratch(
+      scratch, count, n, maxbits, bitlengths);
   (void) error;
   assert(!error);
+}
+
+void ZopfliCalculateBitLengths(const size_t* count, size_t n, int maxbits,
+                               unsigned* bitlengths) {
+  ZopfliKatajainenScratch scratch;
+  ZopfliInitKatajainenScratch(&scratch);
+  ZopfliCalculateBitLengthsScratch(&scratch, count, n, maxbits, bitlengths);
+  ZopfliCleanKatajainenScratch(&scratch);
 }
