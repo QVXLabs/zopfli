@@ -303,20 +303,29 @@ static ZopfliCost GetBestLengths(ZopfliBlockState *s,
     /* Lengths. */
     kend = zopfli_min(leng, inend-i);
     mincostaddcostj = mincost + costs[j];
-    for (k = 3; k <= kend; k++) {
-      ZopfliCost newCost;
+    {
+      /* sublen[k] is piecewise-constant, so cache the dist cost and recompute
+         the dist symbol only when the distance changes. */
+      unsigned short curdist = 0;
+      ZopfliCost dcost = 0;
+      for (k = 3; k <= kend; k++) {
+        ZopfliCost newCost;
 
-      /* The cheapest a match can be is mincost; skip if we already beat it. */
-     if (costs[j + k] <= mincostaddcostj) continue;
+        /* The cheapest a match can be is mincost; skip if we already beat it. */
+        if (costs[j + k] <= mincostaddcostj) continue;
 
-      newCost = cache->ll_cost[k]
-          + cache->d_cost[ZopfliGetDistSymbol(sublen[k])] + costs[j];
-      assert(newCost >= 0);
-      if (newCost < costs[j + k]) {
-        assert(k <= ZOPFLI_MAX_MATCH);
-        costs[j + k] = newCost;
-        length_array[j + k] = k;
-        dist_array[j + k] = sublen[k];
+        if (sublen[k] != curdist) {
+          curdist = sublen[k];
+          dcost = cache->d_cost[ZopfliGetDistSymbol(curdist)];
+        }
+        newCost = cache->ll_cost[k] + dcost + costs[j];
+        assert(newCost >= 0);
+        if (newCost < costs[j + k]) {
+          assert(k <= ZOPFLI_MAX_MATCH);
+          costs[j + k] = newCost;
+          length_array[j + k] = k;
+          dist_array[j + k] = curdist;
+        }
       }
     }
   }
