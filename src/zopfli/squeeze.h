@@ -34,6 +34,12 @@ solution.
 #include "lz77.h"
 
 /*
+Returns the fixed-point shift the optimal-parse cost model uses for a block of
+the given size. Exposed so the overflow bound can be unit-tested; see squeeze.c.
+*/
+int ZopfliGetCostShift(size_t blocksize);
+
+/*
 Calculates lit/len and dist pairs for given data.
 If instart is larger than 0, it uses values before instart as starting
 dictionary.

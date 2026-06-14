@@ -19,8 +19,13 @@ extern "C" {
 }
 
 #include <cstdlib>
+#include <cstring>
 #include <string>
 #include <vector>
+
+#ifdef ZOPFLI_TEST_HAVE_ZLIB
+#include <zlib.h>
+#endif
 
 namespace zopfli_test {
 
@@ -76,6 +81,35 @@ inline std::vector<unsigned char> PseudoRandom(size_t n, unsigned seed = 1) {
   }
   return v;
 }
+
+#ifdef ZOPFLI_TEST_HAVE_ZLIB
+// Inflates a zopfli output for round-trip checks. window_bits selects the
+// container: 31 for gzip, 15 for zlib, -15 for raw deflate. Returns the
+// decompressed bytes, or an empty vector on error.
+inline std::vector<unsigned char> Inflate(const std::vector<unsigned char>& in,
+                                          int window_bits) {
+  z_stream zs;
+  std::vector<unsigned char> out;
+  unsigned char buf[65536];
+  int ret;
+  memset(&zs, 0, sizeof(zs));
+  if (inflateInit2(&zs, window_bits) != Z_OK) return out;
+  zs.next_in = const_cast<unsigned char*>(in.data());
+  zs.avail_in = static_cast<unsigned>(in.size());
+  do {
+    zs.next_out = buf;
+    zs.avail_out = sizeof(buf);
+    ret = inflate(&zs, Z_NO_FLUSH);
+    if (ret != Z_OK && ret != Z_STREAM_END) {
+      inflateEnd(&zs);
+      return std::vector<unsigned char>();
+    }
+    out.insert(out.end(), buf, buf + (sizeof(buf) - zs.avail_out));
+  } while (ret != Z_STREAM_END);
+  inflateEnd(&zs);
+  return out;
+}
+#endif  // ZOPFLI_TEST_HAVE_ZLIB
 
 }  // namespace zopfli_test
 

@@ -65,6 +65,16 @@ Used to initialize costs for example
 #define ZOPFLI_LARGE_FLOAT 1e30
 
 /*
+Integer type for the squeeze optimal-parse cost accumulator. Kept 32-bit so the
+hot per-byte costs[] array and its add/compare stay single-word, which matters
+on 32-bit processors. `int` is 32-bit on every ILP32 and LP64 target of
+interest, so no width detection is needed. Costs are stored in fixed point with
+a per-block shift (see squeeze.c); the shift is chosen so the worst-case
+accumulated cost cannot overflow this type.
+*/
+typedef int ZopfliCost;
+
+/*
 For longest match cache. max 256. Uses huge amounts of memory but makes it
 faster. Uses this many times three bytes per single byte of the input data.
 This is so because longest match finding has to find the exact distance

@@ -149,6 +149,7 @@ if(BUILD_TESTING)
     test/blocksplitter_test.cc
     test/deflate_test.cc
     test/squeeze_test.cc
+    test/fixedpoint_range_test.cc
   )
   target_link_libraries(zopfli_tests PRIVATE libzopfli GTest::gtest_main)
   set_target_properties(zopfli_tests PROPERTIES
@@ -156,6 +157,14 @@ if(BUILD_TESTING)
     CXX_STANDARD_REQUIRED ON
     CXX_EXTENSIONS OFF
   )
+
+  # Optional: link zlib to enable the fixed-point round-trip checks. When
+  # absent, those tests skip themselves.
+  find_package(ZLIB QUIET)
+  if(ZLIB_FOUND)
+    target_link_libraries(zopfli_tests PRIVATE ZLIB::ZLIB)
+    target_compile_definitions(zopfli_tests PRIVATE ZOPFLI_TEST_HAVE_ZLIB)
+  endif()
 endif()
 
 #
