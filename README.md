@@ -31,6 +31,64 @@ The source code of Zopfli is under `src/zopfli`. `zopfli_bin.c` is separate from
 the library and contains an example program to create very well compressed gzip
 files.
 
+## Compression options
+
+Compression is controlled by `ZopfliOptions` (set defaults with
+`ZopfliInitOptions`); the `zopfli` binary exposes the main knobs as flags. Every
+setting produces standard DEFLATE that any zlib/gzip decoder can read — they only
+trade encoder time for output size. Zopfli already operates near the practical
+DEFLATE size limit, so the gains are small in absolute terms.
+
+### Iterations — `numiterations` / `--i#` (default 15)
+
+The dominant quality/speed knob. Each iteration reruns the optimal LZ77 parse
+with a cost model refined from the previous pass, converging toward a smaller
+encoding. Runtime is roughly **linear** in the count; ratio gains have steep
+**diminishing returns**.
+
+The table below compresses ~415 KB of text and reports the output size at each
+setting, relative to the default of 15:
+
+| Iterations (`--i`) | Compressed size | Reduction vs default | Relative runtime |
+|:------------------:|----------------:|:--------------------:|:----------------:|
+| 5                  |   101,950 bytes | −0.06% (**worse**)   |       ~0.3×       |
+| **15** (default)   |   101,886 bytes | —                    |        1×        |
+| 30                 |   101,857 bytes | 0.03%                |        ~2×        |
+| 50                 |   101,854 bytes | 0.03%                |        ~3×        |
+| 100                |   101,796 bytes | 0.09%                |        ~7×        |
+| 200                |   101,704 bytes | 0.18%                |       ~13×        |
+| 500                |   101,674 bytes | 0.21%                |       ~33×        |
+| 1000               |   101,661 bytes | 0.22%                |       ~67×        |
+
+Takeaways: the default 15 already captures ~99.8% of what `--i1000` achieves;
+the *entire* remaining headroom from iterations is ~0.22%. Don't go below the
+default (at `--i5` the parse hasn't converged and output is larger). `--i200`–
+`--i500` is the knee if you want "smaller at reasonable cost"; for very large
+files keep it low to bound runtime. Highly compressible (text-like) data
+benefits most — incompressible or binary data converges flatter.
+
+### Block splitting — `blocksplitting`, `blocksplittingmax`, `blocksplittinglast`
+
+DEFLATE lets each block carry its own Huffman trees, so splitting the input into
+well-chosen blocks lets the trees fit each region better. This usually shrinks
+output, so `blocksplitting` defaults to on.
+
+- `blocksplittingmax` (default 15) caps the number of blocks. `0` means
+  unlimited, which can *hurt* compression on some files (per-block tree overhead
+  outweighs the gain) — the cap exists on purpose.
+- `blocksplittinglast` (default off) chooses *when* split points are picked: the
+  default picks them from a fast initial pass, which — perhaps unintuitively —
+  yields better boundaries than splitting after the expensive optimal parse.
+  Leave it off unless experimenting.
+
+### Output format and verbosity
+
+The container (`--deflate` / `--zlib` / `--gzip`, or the `ZopfliCompress` format
+argument) does **not** change the compressed payload — only the few header/footer
+bytes and the checksum (gzip uses CRC-32, zlib Adler-32, raw DEFLATE none).
+Choose by what the consumer expects, not for ratio. `verbose` / `-v` only prints
+progress to stderr and has no effect on the output.
+
 ## Getting started
 
 ### Prerequisites
