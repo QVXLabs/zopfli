@@ -38,9 +38,8 @@ typedef struct ZopfliOptions {
   int verbose_more;
 
   /*
-  Maximum amount of times to rerun forward and backward pass to optimize LZ77
-  compression cost. Good values: 10, 15 for small files, 5 for files over
-  several MB in size or it will be too slow.
+  Times to rerun the LZ77 optimization pass. 0 (default) = auto: a size-
+  dependent count, larger for larger inputs. A value > 0 forces that fixed count.
   */
   int numiterations;
 

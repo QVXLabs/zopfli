@@ -952,22 +952,41 @@ void ZopfliDeflatePart(const ZopfliOptions* options, int btype, int final,
   free(splitpoints_uncompressed);
 }
 
+/* Iteration count for auto mode (numiterations == 0): 10 + 12 per size-doubling
+above 1 KB, clamped to [15, 400]. Larger inputs have a longer tail of gains;
+runtime is size * iterations, so they are intentionally slow. */
+static int AutoIterations(size_t insize) {
+  int d = 0, iters;
+  size_t k = insize >> 10;  /* doublings above 1 KB = floor(log2(k)). */
+  while (k > 1) { k >>= 1; d++; }
+  iters = 10 + 12 * d;
+  return iters < 15 ? 15 : iters > 400 ? 400 : iters;
+}
+
 void ZopfliDeflate(const ZopfliOptions* options, int btype, int final,
                    const unsigned char* in, size_t insize,
                    unsigned char* bp, unsigned char** out, size_t* outsize) {
  size_t offset = *outsize;
+ ZopfliOptions opts = *options;
+ if (opts.numiterations <= 0) opts.numiterations = AutoIterations(insize);
+ if (opts.verbose && options->numiterations <= 0) {
+   fprintf(stderr, "Auto iterations: %d (input %lu bytes)\n",
+           opts.numiterations, (unsigned long)insize);
+ }
 #if ZOPFLI_MASTER_BLOCK_SIZE == 0
-  ZopfliDeflatePart(options, btype, final, in, 0, insize, bp, out, outsize);
+  ZopfliDeflatePart(&opts, btype, final, in, 0, insize, bp, out, outsize);
 #else
+  {
   size_t i = 0;
   do {
     int masterfinal = (i + ZOPFLI_MASTER_BLOCK_SIZE >= insize);
     int final2 = final && masterfinal;
     size_t size = masterfinal ? insize - i : ZOPFLI_MASTER_BLOCK_SIZE;
-    ZopfliDeflatePart(options, btype, final2,
+    ZopfliDeflatePart(&opts, btype, final2,
                       in, i, i + size, bp, out, outsize);
     i += size;
   } while (i < insize);
+  }
 #endif
   if (options->verbose) {
     fprintf(stderr,

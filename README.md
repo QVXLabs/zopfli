@@ -39,20 +39,28 @@ setting produces standard DEFLATE that any zlib/gzip decoder can read — they o
 trade encoder time for output size. Zopfli already operates near the practical
 DEFLATE size limit, so the gains are small in absolute terms.
 
-### Iterations — `numiterations` / `--i#` (default 15)
+### Iterations — `numiterations` / `--i#` (default: `0` = auto)
 
 The dominant quality/speed knob. Each iteration reruns the optimal LZ77 parse
 with a cost model refined from the previous pass, converging toward a smaller
 encoding. Runtime is roughly **linear** in the count; ratio gains have steep
 **diminishing returns**.
 
-The table below compresses ~415 KB of text and reports the output size at each
-setting, relative to the default of 15:
+**Default is auto** (`numiterations == 0`, or `--i0`): the count scales with
+input size — `10 + 12·floor(log2(size/1KB))` (size quantized to a power of two),
+clamped to `[15, 400]`. Small inputs saturate in a few iterations, while larger
+inputs have a longer tail of gains, so they get more passes (e.g. 15 at ≤1 KB,
+58 at 16 KB, 106 at 256 KB, 130 at 1 MB). Because runtime scales with
+`size × iterations`, large inputs in auto mode are intentionally slow; pass an
+explicit `--i#` to force a fixed count (e.g. `--i15` for the old default's speed).
 
-| Iterations (`--i`) | Compressed size | Reduction vs default | Relative runtime |
+The table below compresses ~415 KB of text at various **fixed** `--i#` counts
+(relative to `--i15`):
+
+| Iterations (`--i`) | Compressed size | Reduction vs `--i15` | Relative runtime |
 |:------------------:|----------------:|:--------------------:|:----------------:|
 | 5                  |   101,950 bytes | −0.06% (**worse**)   |       ~0.3×       |
-| **15** (default)   |   101,886 bytes | —                    |        1×        |
+| 15                 |   101,886 bytes | —                    |        1×        |
 | 30                 |   101,857 bytes | 0.03%                |        ~2×        |
 | 50                 |   101,854 bytes | 0.03%                |        ~3×        |
 | 100                |   101,796 bytes | 0.09%                |        ~7×        |
@@ -60,11 +68,11 @@ setting, relative to the default of 15:
 | 500                |   101,674 bytes | 0.21%                |       ~33×        |
 | 1000               |   101,661 bytes | 0.22%                |       ~67×        |
 
-Takeaways: the default 15 already captures ~99.8% of what `--i1000` achieves;
-the *entire* remaining headroom from iterations is ~0.22%. Don't go below the
-default (at `--i5` the parse hasn't converged and output is larger). `--i200`–
-`--i500` is the knee if you want "smaller at reasonable cost"; for very large
-files keep it low to bound runtime. Highly compressible (text-like) data
+Takeaways: `--i15` already captures ~99.8% of what `--i1000` achieves; the
+*entire* remaining headroom from iterations is ~0.22%, and most of it is in the
+first ~8 passes. `--i5` hasn't converged (output is larger). The auto default
+spends more passes on larger inputs, where that thin tail is worth chasing;
+force a fixed `--i#` to cap runtime. Highly compressible (text-like) data
 benefits most — incompressible or binary data converges flatter.
 
 ### Block splitting — `blocksplitting`, `blocksplittingmax`, `blocksplittinglast`
