@@ -964,10 +964,14 @@ void ZopfliDeflate(const ZopfliOptions* options, int btype, int final,
                    const unsigned char* in, size_t insize,
                    unsigned char* bp, unsigned char** out, size_t* outsize) {
  size_t offset = *outsize;
- ZopfliOptions opts = *options;
- if (opts.numiterations <= 0) opts.numiterations = AutoIterations(insize);
- if (opts.verbose && options->numiterations <= 0) {
-   fprintf(stderr, "Auto iterations: %d (input %lu bytes)\n",
+  size_t offset = *outsize;
+  ZopfliOptions opts = *options;
+  assert(opts.numiterations >= 0);
+  if (opts.numiterations == 0) opts.numiterations = AutoIterations(insize);
+  if (opts.verbose && options->numiterations == 0) {
+    fprintf(stderr, "Auto iterations: %d (input %zu bytes)\n",
+            opts.numiterations, insize);
+  }
            opts.numiterations, (unsigned long)insize);
  }
   {
