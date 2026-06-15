@@ -69,7 +69,9 @@ static int LoadFile(const char* filename,
   file = fopen(filename, "rb");
   if (!file) return 0;
 
-  ZOPFLI_FSEEK64(file, 0, SEEK_END);
+  /* Seek must succeed for the size from ftell to be meaningful; a non-seekable
+  input (pipe, fifo) or I/O error here means we can't size the file. */
+  if (ZOPFLI_FSEEK64(file, 0, SEEK_END) != 0) { fclose(file); return 0; }
   filesize = ZOPFLI_FTELL64(file);
   rewind(file);
   if (filesize < 0) { fclose(file); return 0; }
