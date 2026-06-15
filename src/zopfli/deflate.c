@@ -792,10 +792,9 @@ static void AddLZ77BlockAutoType(ZopfliKatajainenScratch* scratch,
       ZopfliCalculateBlockSizeScratch(scratch, lz77, lstart, lend, 2);
 
   /* Whether to perform the expensive calculation of creating an optimal block
-  with fixed huffman tree to check if smaller. Only do this for small blocks or
-  blocks which already are pretty good with fixed huffman tree. fixedcost <=
-  dyncost * 1.1 done in integer (x10 <= x11). */
-  int expensivefixed = (lz77->size < 1000) || fixedcost * 10 <= dyncost * 11;
+  with fixed huffman tree to check if it is smaller. */
+  int expensivefixed =
+      ZopfliUseExpensiveFixed(lz77->size, fixedcost, dyncost);
 
   ZopfliLZ77Store fixedstore;
   if (lstart == lend) {
@@ -991,9 +990,10 @@ void ZopfliDeflate(const ZopfliOptions* options, int btype, int final,
     /* Percent removed with 2 decimals, integer-only (basis points). */
     long bp = insize ? (long)(((long long)insize - (long long)comp) * 10000
                               / (long long)insize) : 0;
+    long abp = bp < 0 ? -bp : bp;  /* keep the sign for small negatives */
     fprintf(stderr,
-            "Original Size: %lu, Deflate: %lu, Compression: %ld.%02ld%% Removed\n",
+            "Original Size: %lu, Deflate: %lu, Compression: %s%ld.%02ld%% Removed\n",
             (unsigned long)insize, (unsigned long)comp,
-            bp / 100, (bp < 0 ? -bp : bp) % 100);
+            bp < 0 ? "-" : "", abp / 100, abp % 100);
   }
 }
