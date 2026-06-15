@@ -38,8 +38,7 @@ basic deflate specification values and generic program options.
 #endif
 
 /* Count-leading-zeros support: clang/GCC have __builtin_clz; MSVC's C compiler
-uses the _BitScanReverse intrinsic. ZOPFLI_HAS_FAST_CLZ marks either as present
-(callers can use it to pick a bit-twiddling path over a scalar fallback). */
+uses the _BitScanReverse intrinsic (anything else falls back to a loop). */
 #if defined(__has_builtin)
 # if __has_builtin(__builtin_clz)
 #  define ZOPFLI_HAS_BUILTIN_CLZ
@@ -47,11 +46,8 @@ uses the _BitScanReverse intrinsic. ZOPFLI_HAS_FAST_CLZ marks either as present
 #elif defined(__GNUC__) && (__GNUC__ * 100 + __GNUC_MINOR__ >= 304)
 # define ZOPFLI_HAS_BUILTIN_CLZ
 #endif
-#if defined(ZOPFLI_HAS_BUILTIN_CLZ)
-# define ZOPFLI_HAS_FAST_CLZ
-#elif defined(_MSC_VER)
+#if !defined(ZOPFLI_HAS_BUILTIN_CLZ) && defined(_MSC_VER)
 # include <intrin.h>
-# define ZOPFLI_HAS_FAST_CLZ
 #endif
 
 /* Minimum and maximum length that can be encoded in deflate. */
