@@ -24,7 +24,14 @@ decompress. Decompression can be done by any standard gzip, zlib or deflate
 decompressor.
 */
 
+/* Request 64-bit file offsets (off_t / ftello / fseeko) so files larger than
+2 GB load even on 32-bit builds. Must precede any system header. */
+#ifndef _FILE_OFFSET_BITS
+#define _FILE_OFFSET_BITS 64
+#endif
+
 #include <assert.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -39,6 +46,15 @@ decompressor.
 #include <io.h>     /* _setmode, _fileno */
 #endif
 
+/* 64-bit file seek/tell: __int64 on MSVC, off_t (64-bit, see above) elsewhere. */
+#ifdef _MSC_VER
+#define ZOPFLI_FSEEK64 _fseeki64
+#define ZOPFLI_FTELL64 _ftelli64
+#else
+#define ZOPFLI_FSEEK64 fseeko
+#define ZOPFLI_FTELL64 ftello
+#endif
+
 /*
 Loads a file into a memory array. Returns 1 on success, 0 if file doesn't exist
 or couldn't be opened.
@@ -46,23 +62,34 @@ or couldn't be opened.
 static int LoadFile(const char* filename,
                     unsigned char** out, size_t* outsize) {
   FILE* file;
+  long long filesize;
 
   *out = 0;
   *outsize = 0;
   file = fopen(filename, "rb");
   if (!file) return 0;
 
-  fseek(file , 0 , SEEK_END);
-  *outsize = ftell(file);
-  if(*outsize > 2147483647) {
-    fprintf(stderr,"Files larger than 2GB are not supported.\n");
+  ZOPFLI_FSEEK64(file, 0, SEEK_END);
+  filesize = ZOPFLI_FTELL64(file);
+  rewind(file);
+  if (filesize < 0) { fclose(file); return 0; }
+
+  /* The whole file is loaded into memory, so it must fit in size_t (and be
+  mallocable). On 64-bit builds that is effectively unbounded; on 32-bit builds
+  it caps near 4 GB. */
+  if ((unsigned long long)filesize > (unsigned long long)SIZE_MAX) {
+    fprintf(stderr, "File too large to load into memory on this build.\n");
     exit(EXIT_FAILURE);
   }
-  rewind(file);
+  *outsize = (size_t)filesize;
 
-  *out = (unsigned char*)malloc(*outsize);
+  *out = (unsigned char*)malloc(*outsize ? *outsize : 1);
+  if (!*out) {
+    fprintf(stderr, "Error: out of memory loading file.\n");
+    exit(EXIT_FAILURE);
+  }
 
-  if (*outsize && (*out)) {
+  if (*outsize) {
     size_t testsize = fread(*out, 1, *outsize, file);
     if (testsize != *outsize) {
       /* It could be a directory */
@@ -74,7 +101,6 @@ static int LoadFile(const char* filename,
     }
   }
 
-  assert(!(*outsize) || out);  /* If size is not zero, out must be allocated. */
   fclose(file);
   return 1;
 }

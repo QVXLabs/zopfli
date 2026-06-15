@@ -26,18 +26,25 @@ The hash for ZopfliFindLongestMatch of lz77.c.
 
 #include "util.h"
 
+/*
+head/hashval are unsigned short: hash values are masked to [0, HASH_MASK] (15
+bits) and stored values are window positions (<= 32767) or the (unsigned
+short)-1 empty sentinel, so 16 bits suffice. This roughly halves the hash
+allocation (and head/head2 are also right-sized to HASH_MASK + 1 buckets), which
+cuts memory and improves locality on small-cache targets. See ZopfliAllocHash.
+*/
 typedef struct ZopfliHash {
-  int* head;  /* Hash value to index of its most recent occurrence. */
+  unsigned short* head;  /* Hash value to index of its most recent occurrence. */
   unsigned short* prev;  /* Index to index of prev. occurrence of same hash. */
-  int* hashval;  /* Index to hash value at this index. */
+  unsigned short* hashval;  /* Index to hash value at this index. */
   int val;  /* Current hash value. */
 
 #ifdef ZOPFLI_HASH_SAME_HASH
   /* Fields with similar purpose as the above hash, but for the second hash with
   a value that is calculated differently.  */
-  int* head2;  /* Hash value to index of its most recent occurrence. */
+  unsigned short* head2;  /* Hash value to index of its most recent occurrence.*/
   unsigned short* prev2;  /* Index to index of prev. occurrence of same hash. */
-  int* hashval2;  /* Index to hash value at this index. */
+  unsigned short* hashval2;  /* Index to hash value at this index. */
   int val2;  /* Current hash value. */
 #endif
 
