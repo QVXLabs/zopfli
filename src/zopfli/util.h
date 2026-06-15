@@ -82,6 +82,15 @@ Set it to 0 to disable master blocks.
 #define ZOPFLI_MASTER_BLOCK_SIZE 1000000
 
 /*
+Largest part (in bytes) the optimal-parse cost model can represent. ZopfliCost
+is 32-bit and a block costs < 32 * blocksize bits, so 32 * blocksize must stay
+<= 2^29 (see ZopfliGetCostShift), capping a safe block at 2^24 bytes. The
+master-block loop clamps part sizes to this even when ZOPFLI_MASTER_BLOCK_SIZE
+is 0 (disabled) or larger, so the cost DP can never overflow.
+*/
+#define ZOPFLI_COST_MAX_BLOCK_SIZE ((uint32_t)1 << 24)
+
+/*
 Sentinel larger than any real block-size/cost (in bits), for initializing a
 running minimum. Cost values are uint32_t (a block is < 2^31 bits), so UINT32_MAX
 exceeds any real value; same value on every platform. Only ever compared, never

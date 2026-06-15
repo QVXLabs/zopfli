@@ -970,21 +970,25 @@ void ZopfliDeflate(const ZopfliOptions* options, int btype, int final,
    fprintf(stderr, "Auto iterations: %d (input %lu bytes)\n",
            opts.numiterations, (unsigned long)insize);
  }
-#if ZOPFLI_MASTER_BLOCK_SIZE == 0
-  ZopfliDeflatePart(&opts, btype, final, in, 0, insize, bp, out, outsize);
-#else
   {
+  /* Effective master block size. Clamp to ZOPFLI_COST_MAX_BLOCK_SIZE (and use
+  it when master blocks are disabled) so a part never exceeds what the 32-bit
+  optimal-parse cost model can represent, regardless of the configured value. */
+#if ZOPFLI_MASTER_BLOCK_SIZE == 0 || ZOPFLI_MASTER_BLOCK_SIZE > (1 << 24)
+  size_t mbs = ZOPFLI_COST_MAX_BLOCK_SIZE;
+#else
+  size_t mbs = ZOPFLI_MASTER_BLOCK_SIZE;
+#endif
   size_t i = 0;
   do {
-    int masterfinal = (i + ZOPFLI_MASTER_BLOCK_SIZE >= insize);
+    int masterfinal = (i + mbs >= insize);
     int final2 = final && masterfinal;
-    size_t size = masterfinal ? insize - i : ZOPFLI_MASTER_BLOCK_SIZE;
+    size_t size = masterfinal ? insize - i : mbs;
     ZopfliDeflatePart(&opts, btype, final2,
                       in, i, i + size, bp, out, outsize);
     i += size;
   } while (i < insize);
   }
-#endif
   if (options->verbose) {
     size_t comp = *outsize - offset;
     /* Percent removed with 2 decimals, integer-only (basis points). */
