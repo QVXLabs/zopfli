@@ -31,6 +31,66 @@ The source code of Zopfli is under `src/zopfli`. `zopfli_bin.c` is separate from
 the library and contains an example program to create very well compressed gzip
 files.
 
+## Modifications from Stock Zopfli
+
+This fork is a drop-in replacement — it emits standard DEFLATE/zlib/gzip that any
+existing decoder reads — but differs from upstream zopfli in four ways. Each is
+detailed in its own section below; the highlights:
+
+**Faster.** At a matched iteration count the optimal parse is **~2.5× faster
+than stock zopfli** (and a bit more on incompressible data):
+
+| Input    | Stock zopfli | QVXLabs/Zopfli | Speedup |
+|----------|-------------:|---------------:|:-------:|
+| 256 KB text   |   1.45 s |   0.70 s | 2.1× |
+| 1 MB text     |   4.77 s |   1.92 s | 2.5× |
+| 3 MB text     |  13.12 s |   5.35 s | 2.5× |
+| 10 MB text    |  43.62 s |  17.69 s | 2.5× |
+| 256 KB binary |   0.44 s |   0.18 s | 2.5× |
+| 1 MB binary   |   1.66 s |   0.65 s | 2.6× |
+| 3 MB binary   |   5.59 s |   1.90 s | 2.9× |
+| 10 MB binary  |  18.63 s |   6.63 s | 2.8× |
+
+<sub>Measured on an Intel Core i9-8950HK (Coffee Lake), release `-O3 -DNDEBUG`,
+25 iterations (stock's hardcoded count; the fork was run with `--i25` to match),
+min of 2 runs. Text = concatenated source; binary = incompressible random data.</sub>
+
+It also scales much better at high iteration counts: the longest-match cache
+makes passes after the first nearly free, whereas stock's cost is roughly linear
+in the iteration count. The main changes (all preserving the encoder's output):
+an integer fixed-point cost model replacing the `double` function-pointer cost
+callbacks; carrying match distances forward so the final path walk never
+re-searches the hash; fusing the longest-match cache directly into the cost
+dynamic-program; a variable-length match cache that lets iterations ≥2 skip the
+per-byte hash rebuild entirely; and reusing scratch buffers instead of per-call
+allocations.
+
+**Deterministic & floating-point-free.** The cost model (including the entropy /
+`-log2`) is computed entirely in integer fixed point, so output is **bit-identical
+on every CPU, compiler, and FP mode**, and the core needs no `libm` — it runs on
+FPU-less microcontrollers. Output is *not* byte-identical to stock zopfli; it
+defines a new canonical, platform-independent encoding. See the
+**Deterministic, floating-point-free** section below.
+
+**Lower memory.** Hot data structures were trimmed to what the data actually
+needs — 16-bit hash tables (right-sized to the used bucket count), 32-bit LZ77
+cumulative histograms, and dropping two precomputed per-symbol arrays that are
+cheaply recomputed on the fly — reducing peak resident memory with
+**byte-identical output**. Measured peak RSS (`/usr/bin/time -l`, 3 MB input,
+`--i200`):
+
+| Input                         | Before   | After   | Saved          |
+|-------------------------------|---------:|--------:|:--------------:|
+| Text (~3 MB)                  | 35.2 MB  | 30.4 MB | 4.8 MB (−14%)  |
+| Incompressible binary (~3 MB) | 100.4 MB | 69.9 MB | 30.5 MB (−30%) |
+
+Incompressible input has ~1 LZ77 symbol per byte, so the per-symbol arrays — and
+thus the savings — are largest there; text compresses to fewer symbols.
+
+**Auto iteration count.** The default `numiterations` is `0` = auto: the number
+of optimization passes scales with input size (larger inputs have a longer tail
+of gains) instead of a fixed 15. See the **Iterations** section below.
+
 ## Deterministic, floating-point-free
 
 This fork's core library (`src/zopfli`) contains **no floating point**. The cost

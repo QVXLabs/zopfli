@@ -26,6 +26,7 @@ compression.
 #ifndef ZOPFLI_LZ77_H_
 #define ZOPFLI_LZ77_H_
 
+#include <stdint.h>
 #include <stdlib.h>
 
 #include "cache.h"
@@ -53,15 +54,12 @@ typedef struct ZopfliLZ77Store {
   const unsigned char* data;  /* original data */
   size_t* pos;  /* position in data where this LZ77 command begins */
 
-  unsigned short* ll_symbol;
-  unsigned short* d_symbol;
-
   /* Cumulative histograms wrapping around per chunk. Each chunk has the amount
   of distinct symbols as length, so using 1 value per LZ77 symbol, we have a
   precise histogram at every N symbols, and the rest can be calculated by
   looping through the actual symbols of this chunk. */
-  size_t* ll_counts;
-  size_t* d_counts;
+  uint32_t* ll_counts;
+  uint32_t* d_counts;
 } ZopfliLZ77Store;
 
 void ZopfliInitLZ77Store(const unsigned char* data, ZopfliLZ77Store* store);
