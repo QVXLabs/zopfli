@@ -26,19 +26,25 @@ Author: jyrki.alakuijala@gmail.com (Jyrki Alakuijala)
 #define HASH_SHIFT 5
 #define HASH_MASK 32767
 
+/* Empty/uninitialized 16-bit hash slot. Real positions and hash values are
+<= HASH_MASK (32767), so 0xFFFF can never collide with a valid entry. */
+#define ZOPFLI_HASH_EMPTY ((unsigned short)-1)
+
 void ZopfliAllocHash(size_t window_size, ZopfliHash* h) {
-  h->head = (int*)malloc(sizeof(*h->head) * 65536);
+  /* head/head2 are indexed by the masked hash value, so only HASH_MASK + 1
+  buckets are ever used (not 65536). */
+  h->head = (unsigned short*)malloc(sizeof(*h->head) * (HASH_MASK + 1));
   h->prev = (unsigned short*)malloc(sizeof(*h->prev) * window_size);
-  h->hashval = (int*)malloc(sizeof(*h->hashval) * window_size);
+  h->hashval = (unsigned short*)malloc(sizeof(*h->hashval) * window_size);
 
 #ifdef ZOPFLI_HASH_SAME
   h->same = (unsigned short*)malloc(sizeof(*h->same) * window_size);
 #endif
 
 #ifdef ZOPFLI_HASH_SAME_HASH
-  h->head2 = (int*)malloc(sizeof(*h->head2) * 65536);
+  h->head2 = (unsigned short*)malloc(sizeof(*h->head2) * (HASH_MASK + 1));
   h->prev2 = (unsigned short*)malloc(sizeof(*h->prev2) * window_size);
-  h->hashval2 = (int*)malloc(sizeof(*h->hashval2) * window_size);
+  h->hashval2 = (unsigned short*)malloc(sizeof(*h->hashval2) * window_size);
 #endif
 }
 
@@ -46,13 +52,13 @@ void ZopfliResetHash(size_t window_size, ZopfliHash* h) {
   size_t i;
 
   h->val = 0;
-  for (i = 0; i < 65536; i++) {
-    h->head[i] = -1;  /* -1 indicates no head so far. */
+  for (i = 0; i < HASH_MASK + 1; i++) {
+    h->head[i] = ZOPFLI_HASH_EMPTY;  /* no head so far. */
   }
   for (i = 0; i < window_size; i++) {
     /* If prev[j] == j, then prev[j] is uninitialized. */
     h->prev[i] = (unsigned short)i;
-    h->hashval[i] = -1;
+    h->hashval[i] = ZOPFLI_HASH_EMPTY;
   }
 
 #ifdef ZOPFLI_HASH_SAME
@@ -63,12 +69,12 @@ void ZopfliResetHash(size_t window_size, ZopfliHash* h) {
 
 #ifdef ZOPFLI_HASH_SAME_HASH
   h->val2 = 0;
-  for (i = 0; i < 65536; i++) {
-    h->head2[i] = -1;
+  for (i = 0; i < HASH_MASK + 1; i++) {
+    h->head2[i] = ZOPFLI_HASH_EMPTY;
   }
   for (i = 0; i < window_size; i++) {
     h->prev2[i] = (unsigned short)i;
-    h->hashval2[i] = -1;
+    h->hashval2[i] = ZOPFLI_HASH_EMPTY;
   }
 #endif
 }
@@ -108,7 +114,8 @@ void ZopfliUpdateHash(const unsigned char* array, size_t pos, size_t end,
   UpdateHashValue(h, pos + ZOPFLI_MIN_MATCH <= end ?
       array[pos + ZOPFLI_MIN_MATCH - 1] : 0);
   h->hashval[hpos] = h->val;
-  if (h->head[h->val] != -1 && h->hashval[h->head[h->val]] == h->val) {
+  if (h->head[h->val] != ZOPFLI_HASH_EMPTY &&
+      h->hashval[h->head[h->val]] == h->val) {
     h->prev[hpos] = h->head[h->val];
   }
   else h->prev[hpos] = hpos;
@@ -129,7 +136,8 @@ void ZopfliUpdateHash(const unsigned char* array, size_t pos, size_t end,
 #ifdef ZOPFLI_HASH_SAME_HASH
   h->val2 = ((h->same[hpos] - ZOPFLI_MIN_MATCH) & 255) ^ h->val;
   h->hashval2[hpos] = h->val2;
-  if (h->head2[h->val2] != -1 && h->hashval2[h->head2[h->val2]] == h->val2) {
+  if (h->head2[h->val2] != ZOPFLI_HASH_EMPTY &&
+      h->hashval2[h->head2[h->val2]] == h->val2) {
     h->prev2[hpos] = h->head2[h->val2];
   }
   else h->prev2[hpos] = hpos;

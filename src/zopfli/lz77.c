@@ -33,8 +33,6 @@ void ZopfliInitLZ77Store(const unsigned char* data, ZopfliLZ77Store* store) {
   store->dists = 0;
   store->pos = 0;
   store->data = data;
-  store->ll_symbol = 0;
-  store->d_symbol = 0;
   store->ll_counts = 0;
   store->d_counts = 0;
 }
@@ -43,8 +41,6 @@ void ZopfliCleanLZ77Store(ZopfliLZ77Store* store) {
   free(store->litlens);
   free(store->dists);
   free(store->pos);
-  free(store->ll_symbol);
-  free(store->d_symbol);
   free(store->ll_counts);
   free(store->d_counts);
 }
@@ -57,7 +53,7 @@ static size_t CeilDiv(size_t a, size_t b) {
 Grows the store's arrays to hold at least 'need' lz77 symbols, reusing the
 existing allocation (geometric growth). The ll_counts/d_counts lengths are
 deterministic functions of the symbol capacity, so one capacity covers all
-seven arrays.
+five arrays.
 */
 static void ZopfliReserveLZ77Store(ZopfliLZ77Store* store, size_t need) {
   size_t newcap, llc, dc;
@@ -71,16 +67,11 @@ static void ZopfliReserveLZ77Store(ZopfliLZ77Store* store, size_t need) {
   store->dists = (unsigned short*)realloc(
       store->dists, sizeof(*store->dists) * newcap);
   store->pos = (size_t*)realloc(store->pos, sizeof(*store->pos) * newcap);
-  store->ll_symbol = (unsigned short*)realloc(
-      store->ll_symbol, sizeof(*store->ll_symbol) * newcap);
-  store->d_symbol = (unsigned short*)realloc(
-      store->d_symbol, sizeof(*store->d_symbol) * newcap);
-  store->ll_counts = (size_t*)realloc(
+  store->ll_counts = (uint32_t*)realloc(
       store->ll_counts, sizeof(*store->ll_counts) * llc);
-  store->d_counts = (size_t*)realloc(
+  store->d_counts = (uint32_t*)realloc(
       store->d_counts, sizeof(*store->d_counts) * dc);
   if (!store->litlens || !store->dists || !store->pos) exit(-1);
-  if (!store->ll_symbol || !store->d_symbol) exit(-1);
   if (!store->ll_counts || !store->d_counts) exit(-1);
   store->cap = newcap;
 }
@@ -100,17 +91,12 @@ void ZopfliCopyLZ77Store(
       (unsigned short*)malloc(sizeof(*dest->litlens) * source->size);
   dest->dists = (unsigned short*)malloc(sizeof(*dest->dists) * source->size);
   dest->pos = (size_t*)malloc(sizeof(*dest->pos) * source->size);
-  dest->ll_symbol =
-      (unsigned short*)malloc(sizeof(*dest->ll_symbol) * source->size);
-  dest->d_symbol =
-      (unsigned short*)malloc(sizeof(*dest->d_symbol) * source->size);
-  dest->ll_counts = (size_t*)malloc(sizeof(*dest->ll_counts) * llsize);
-  dest->d_counts = (size_t*)malloc(sizeof(*dest->d_counts) * dsize);
+  dest->ll_counts = (uint32_t*)malloc(sizeof(*dest->ll_counts) * llsize);
+  dest->d_counts = (uint32_t*)malloc(sizeof(*dest->d_counts) * dsize);
 
   /* Allocation failed. */
   if (!dest->litlens || !dest->dists) exit(-1);
   if (!dest->pos) exit(-1);
-  if (!dest->ll_symbol || !dest->d_symbol) exit(-1);
   if (!dest->ll_counts || !dest->d_counts) exit(-1);
 
   dest->size = source->size;
@@ -119,8 +105,6 @@ void ZopfliCopyLZ77Store(
     dest->litlens[i] = source->litlens[i];
     dest->dists[i] = source->dists[i];
     dest->pos[i] = source->pos[i];
-    dest->ll_symbol[i] = source->ll_symbol[i];
-    dest->d_symbol[i] = source->d_symbol[i];
   }
   for (i = 0; i < llsize; i++) {
     dest->ll_counts[i] = source->ll_counts[i];
@@ -166,12 +150,8 @@ void ZopfliStoreLitLenDist(unsigned short length, unsigned short dist,
   assert(length < 259);
 
   if (dist == 0) {
-    store->ll_symbol[origsize] = length;
-    store->d_symbol[origsize] = 0;
     store->ll_counts[llstart + length]++;
   } else {
-    store->ll_symbol[origsize] = ZopfliGetLengthSymbol(length);
-    store->d_symbol[origsize] = ZopfliGetDistSymbol(dist);
     store->ll_counts[llstart + ZopfliGetLengthSymbol(length)]++;
     store->d_counts[dstart + ZopfliGetDistSymbol(dist)]++;
   }
@@ -196,6 +176,17 @@ size_t ZopfliLZ77GetByteRange(const ZopfliLZ77Store* lz77,
       1 : lz77->litlens[l]) - lz77->pos[lstart];
 }
 
+/* Lit/len Huffman symbol at store position i, recomputed from litlens/dists
+(the cached ll_symbol/d_symbol arrays were dropped to save memory). For a
+literal (dist 0) the symbol is the byte value in litlens; otherwise it is the
+length symbol. d_symbol is just ZopfliGetDistSymbol(dist), inlined at its (two,
+dist != 0 guarded) use sites. */
+static unsigned LitLenSymbol(const ZopfliLZ77Store* lz77, size_t i) {
+  return lz77->dists[i] == 0
+      ? lz77->litlens[i]
+      : (unsigned)ZopfliGetLengthSymbol(lz77->litlens[i]);
+}
+
 static void ZopfliLZ77GetHistogramAt(const ZopfliLZ77Store* lz77, size_t lpos,
                                      size_t* ll_counts, size_t* d_counts) {
   /* The real histogram is created by using the histogram for this chunk, but
@@ -207,13 +198,13 @@ static void ZopfliLZ77GetHistogramAt(const ZopfliLZ77Store* lz77, size_t lpos,
     ll_counts[i] = lz77->ll_counts[llpos + i];
   }
   for (i = lpos + 1; i < llpos + ZOPFLI_NUM_LL && i < lz77->size; i++) {
-    ll_counts[lz77->ll_symbol[i]]--;
+    ll_counts[LitLenSymbol(lz77, i)]--;
   }
   for (i = 0; i < ZOPFLI_NUM_D; i++) {
     d_counts[i] = lz77->d_counts[dpos + i];
   }
   for (i = lpos + 1; i < dpos + ZOPFLI_NUM_D && i < lz77->size; i++) {
-    if (lz77->dists[i] != 0) d_counts[lz77->d_symbol[i]]--;
+    if (lz77->dists[i] != 0) d_counts[ZopfliGetDistSymbol(lz77->dists[i])]--;
   }
 }
 
@@ -225,8 +216,8 @@ void ZopfliLZ77GetHistogram(const ZopfliLZ77Store* lz77,
     memset(ll_counts, 0, sizeof(*ll_counts) * ZOPFLI_NUM_LL);
     memset(d_counts, 0, sizeof(*d_counts) * ZOPFLI_NUM_D);
     for (i = lstart; i < lend; i++) {
-      ll_counts[lz77->ll_symbol[i]]++;
-      if (lz77->dists[i] != 0) d_counts[lz77->d_symbol[i]]++;
+      ll_counts[LitLenSymbol(lz77, i)]++;
+      if (lz77->dists[i] != 0) d_counts[ZopfliGetDistSymbol(lz77->dists[i])]++;
     }
   } else {
     /* Subtract the cumulative histograms at the end and the start to get the
@@ -462,9 +453,9 @@ void ZopfliFindLongestMatch(ZopfliBlockState* s, const ZopfliHash* h,
 
   unsigned dist = 0;  /* Not unsigned short on purpose. */
 
-  int* hhead = h->head;
+  unsigned short* hhead = h->head;
   unsigned short* hprev = h->prev;
-  int* hhashval = h->hashval;
+  unsigned short* hhashval = h->hashval;
   int hval = h->val;
   /* hhashval is read only by asserts (line ~511), which NDEBUG strips. */
   (void)hhashval;
