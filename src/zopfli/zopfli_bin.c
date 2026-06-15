@@ -35,7 +35,8 @@ decompressor.
 
 /* Windows workaround for stdout output. */
 #if _WIN32
-#include <fcntl.h>
+#include <fcntl.h>  /* _O_BINARY */
+#include <io.h>     /* _setmode, _fileno */
 #endif
 
 /*
@@ -171,8 +172,8 @@ int main(int argc, char* argv[]) {
           "  -c    write the result on standard output, instead of disk"
           " filename + '.gz'\n"
           "  -v    verbose mode\n"
-          "  --i#  perform # iterations (default 15). More gives"
-          " more compression but is slower."
+          "  --i#  perform # iterations (fixed). Default (or --i0) is auto:"
+          " a size-dependent count, more for larger files."
           " Examples: --i10, --i50, --i1000\n");
       fprintf(stderr,
           "  --gzip        output to gzip format (default)\n"
@@ -183,8 +184,8 @@ int main(int argc, char* argv[]) {
     }
   }
 
-  if (options.numiterations < 1) {
-    fprintf(stderr, "Error: must have 1 or more iterations\n");
+  if (options.numiterations < 0) {
+    fprintf(stderr, "Error: number of iterations must be 0 (auto) or more\n");
     return 0;
   }
 

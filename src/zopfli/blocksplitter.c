@@ -15,11 +15,13 @@ limitations under the License.
 
 Author: lode.vandevenne@gmail.com (Lode Vandevenne)
 Author: jyrki.alakuijala@gmail.com (Jyrki Alakuijala)
+Author: afalls@qvxlabs.com (Ardavon Falls)
 */
 
 #include "blocksplitter.h"
 
 #include <assert.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -33,21 +35,21 @@ The "f" for the FindMinimum function below.
 i: the current parameter of f(i)
 context: for your implementation
 */
-typedef double FindMinimumFun(size_t i, void* context);
+typedef uint32_t FindMinimumFun(size_t i, void* context);
 
 /*
-Finds minimum of function f(i) where is is of type size_t, f(i) is of type
-double, i is in range start-end (excluding end).
+Finds minimum of function f(i) where i is of type size_t, f(i) is of type
+uint32_t, i is in range start-end (excluding end).
 Outputs the minimum value in *smallest and returns the index of this value.
 */
 static size_t FindMinimum(FindMinimumFun f, void* context,
-                          size_t start, size_t end, double* smallest) {
+                          size_t start, size_t end, uint32_t* smallest) {
   if (end - start < 1024) {
-    double best = ZOPFLI_LARGE_FLOAT;
+    uint32_t best = ZOPFLI_LARGE_COST;
     size_t result = start;
     size_t i;
     for (i = start; i < end; i++) {
-      double v = f(i, context);
+      uint32_t v = f(i, context);
       if (v < best) {
         best = v;
         result = i;
@@ -60,10 +62,10 @@ static size_t FindMinimum(FindMinimumFun f, void* context,
 #define NUM 9  /* Good value: 9. */
     size_t i;
     size_t p[NUM];
-    double vp[NUM];
+    uint32_t vp[NUM];
     size_t besti;
-    double best;
-    double lastbest = ZOPFLI_LARGE_FLOAT;
+    uint32_t best;
+    uint32_t lastbest = ZOPFLI_LARGE_COST;
     size_t pos = start;
 
     for (;;) {
@@ -105,13 +107,15 @@ dists: ll77 distances
 lstart: start of block
 lend: end of block (not inclusive)
 */
-static double EstimateCost(const ZopfliLZ77Store* lz77,
+static uint32_t EstimateCost(ZopfliKatajainenScratch* scratch,
+                           const ZopfliLZ77Store* lz77,
                            size_t lstart, size_t lend) {
-  return ZopfliCalculateBlockSizeAutoType(lz77, lstart, lend);
+  return ZopfliCalculateBlockSizeAutoTypeScratch(scratch, lz77, lstart, lend);
 }
 
 typedef struct SplitCostContext {
   const ZopfliLZ77Store* lz77;
+  ZopfliKatajainenScratch* scratch;
   size_t start;
   size_t end;
 } SplitCostContext;
@@ -122,9 +126,10 @@ Gets the cost which is the sum of the cost of the left and the right section
 of the data.
 type: FindMinimumFun
 */
-static double SplitCost(size_t i, void* context) {
+static uint32_t SplitCost(size_t i, void* context) {
   SplitCostContext* c = (SplitCostContext*)context;
-  return EstimateCost(c->lz77, c->start, i) + EstimateCost(c->lz77, i, c->end);
+  return EstimateCost(c->scratch, c->lz77, c->start, i)
+      + EstimateCost(c->scratch, c->lz77, i, c->end);
 }
 
 static void AddSorted(size_t value, size_t** out, size_t* outsize) {
@@ -168,11 +173,11 @@ static void PrintBlockSplitPoints(const ZopfliLZ77Store* lz77,
 
   fprintf(stderr, "block split points: ");
   for (i = 0; i < npoints; i++) {
-    fprintf(stderr, "%d ", (int)splitpoints[i]);
+    fprintf(stderr, "%zu ", splitpoints[i]);
   }
   fprintf(stderr, "(hex:");
   for (i = 0; i < npoints; i++) {
-    fprintf(stderr, " %x", (int)splitpoints[i]);
+    fprintf(stderr, " %zx", splitpoints[i]);
   }
   fprintf(stderr, ")\n");
 
@@ -220,9 +225,13 @@ void ZopfliBlockSplitLZ77(const ZopfliOptions* options,
   size_t llpos = 0;
   size_t numblocks = 1;
   unsigned char* done;
-  double splitcost, origcost;
+  uint32_t splitcost, origcost;
+  /* Reused across all block-size evaluations of this split. */
+  ZopfliKatajainenScratch scratch;
 
   if (lz77->size < 10) return;  /* This code fails on tiny files. */
+
+  ZopfliInitKatajainenScratch(&scratch);
 
   done = (unsigned char*)malloc(lz77->size);
   if (!done) exit(-1); /* Allocation failed. */
@@ -238,6 +247,7 @@ void ZopfliBlockSplitLZ77(const ZopfliOptions* options,
     }
 
     c.lz77 = lz77;
+    c.scratch = &scratch;
     c.start = lstart;
     c.end = lend;
     assert(lstart < lend);
@@ -246,7 +256,7 @@ void ZopfliBlockSplitLZ77(const ZopfliOptions* options,
     assert(llpos > lstart);
     assert(llpos < lend);
 
-    origcost = EstimateCost(lz77, lstart, lend);
+    origcost = EstimateCost(&scratch, lz77, lstart, lend);
 
     if (splitcost > origcost || llpos == lstart + 1 || llpos == lend) {
       done[lstart] = 1;
@@ -269,6 +279,7 @@ void ZopfliBlockSplitLZ77(const ZopfliOptions* options,
     PrintBlockSplitPoints(lz77, *splitpoints, *npoints);
   }
 
+  ZopfliCleanKatajainenScratch(&scratch);
   free(done);
 }
 

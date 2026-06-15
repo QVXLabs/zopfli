@@ -2,6 +2,11 @@ cmake_minimum_required(VERSION 3.10)
 
 project(Zopfli VERSION 1.0.5 LANGUAGES C CXX)
 
+# C99 for <stdint.h> (fixed-width cost types). The default would usually be new
+# enough, but pin it so the dependency is explicit.
+set(CMAKE_C_STANDARD 99)
+set(CMAKE_C_STANDARD_REQUIRED ON)
+
 #
 # Options
 #
@@ -57,9 +62,7 @@ set_target_properties(libzopfli PROPERTIES
   VERSION ${PROJECT_VERSION}
   SOVERSION ${PROJECT_VERSION_MAJOR}
 )
-if(UNIX AND NOT (BEOS OR HAIKU))
-  target_link_libraries(libzopfli PUBLIC m)
-endif()
+# libzopfli is integer-only now; no libm needed.
 
 #
 # libzopflipng
@@ -106,6 +109,38 @@ if(MSVC)
   target_compile_definitions(zopflipng PRIVATE _CRT_SECURE_NO_WARNINGS)
 endif()
 
+#
+# Warnings as errors (always on; first-party code only, vendored LodePNG is
+# exempted). MSVC uses /WX; GCC/Clang use -Werror plus the same warning set as
+# the Makefile so the policy matches across build systems.
+#
+if(MSVC)
+  foreach(zopfli_target libzopfli libzopflipng zopfli zopflipng)
+    target_compile_options(${zopfli_target} PRIVATE /WX)
+  endforeach()
+  # Keep LodePNG's warnings non-fatal.
+  set_source_files_properties(
+    src/zopflipng/lodepng/lodepng.cpp
+    src/zopflipng/lodepng/lodepng_util.cpp
+    PROPERTIES COMPILE_OPTIONS "/WX-"
+  )
+else()
+  set(zopfli_c_warn -Wall -Wextra -pedantic -Werror)
+  set(zopfli_cxx_warn -Wall -Wextra -pedantic -Werror)
+  foreach(zopfli_target libzopfli libzopflipng zopfli zopflipng)
+    target_compile_options(${zopfli_target} PRIVATE
+      $<$<COMPILE_LANGUAGE:C>:${zopfli_c_warn}>
+      $<$<COMPILE_LANGUAGE:CXX>:${zopfli_cxx_warn}>
+    )
+  endforeach()
+  # Silence vendored LodePNG entirely (third-party; we don't lint it).
+  set_source_files_properties(
+    src/zopflipng/lodepng/lodepng.cpp
+    src/zopflipng/lodepng/lodepng_util.cpp
+    PROPERTIES COMPILE_OPTIONS "-w"
+  )
+endif()
+
 # Create aliases
 #
 # Makes targets available to projects using Zopfli as a subproject using the
@@ -149,6 +184,7 @@ if(BUILD_TESTING)
     test/blocksplitter_test.cc
     test/deflate_test.cc
     test/squeeze_test.cc
+    test/fixedpoint_range_test.cc
   )
   target_link_libraries(zopfli_tests PRIVATE libzopfli GTest::gtest_main)
   set_target_properties(zopfli_tests PROPERTIES
@@ -156,6 +192,14 @@ if(BUILD_TESTING)
     CXX_STANDARD_REQUIRED ON
     CXX_EXTENSIONS OFF
   )
+
+  # Optional: link zlib to enable the fixed-point round-trip checks. When
+  # absent, those tests skip themselves.
+  find_package(ZLIB QUIET)
+  if(ZLIB_FOUND)
+    target_link_libraries(zopfli_tests PRIVATE ZLIB::ZLIB)
+    target_compile_definitions(zopfli_tests PRIVATE ZOPFLI_TEST_HAVE_ZLIB)
+  endif()
 endif()
 
 #

@@ -15,6 +15,7 @@ limitations under the License.
 
 Author: lode.vandevenne@gmail.com (Lode Vandevenne)
 Author: jyrki.alakuijala@gmail.com (Jyrki Alakuijala)
+Author: afalls@qvxlabs.com (Ardavon Falls)
 */
 
 #include "gzip_container.h"
@@ -116,9 +117,12 @@ void ZopfliGzipCompress(const ZopfliOptions* options,
   ZOPFLI_APPEND_DATA((insize >> 24) % 256, out, outsize);
 
   if (options->verbose) {
+    /* Percent removed with 2 decimals, integer-only (basis points). */
+    long bp = insize ? (long)(((long long)insize - (long long)*outsize) * 10000
+                              / (long long)insize) : 0;
+    long abp = bp < 0 ? -bp : bp;  /* keep the sign for small negatives */
     fprintf(stderr,
-            "Original Size: %d, Gzip: %d, Compression: %f%% Removed\n",
-            (int)insize, (int)*outsize,
-            100.0 * (double)(insize - *outsize) / (double)insize);
+            "Original Size: %zu, Gzip: %zu, Compression: %s%ld.%02ld%% Removed\n",
+            insize, *outsize, bp < 0 ? "-" : "", abp / 100, abp % 100);
   }
 }

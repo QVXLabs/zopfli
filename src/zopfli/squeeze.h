@@ -15,6 +15,7 @@ limitations under the License.
 
 Author: lode.vandevenne@gmail.com (Lode Vandevenne)
 Author: jyrki.alakuijala@gmail.com (Jyrki Alakuijala)
+Author: afalls@qvxlabs.com (Ardavon Falls)
 */
 
 /*
@@ -32,6 +33,12 @@ solution.
 #define ZOPFLI_SQUEEZE_H_
 
 #include "lz77.h"
+
+/*
+Returns the fixed-point shift the optimal-parse cost model uses for a block of
+the given size. Exposed so the overflow bound can be unit-tested; see squeeze.c.
+*/
+int ZopfliGetCostShift(size_t blocksize);
 
 /*
 Calculates lit/len and dist pairs for given data.

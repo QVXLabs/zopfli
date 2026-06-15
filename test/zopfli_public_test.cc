@@ -70,8 +70,8 @@ TEST(ZopfliPublic, Matrix) {
                                   ZOPFLI_FORMAT_DEFLATE};
   for (const auto& in : inputs) {
     for (ZopfliFormat fmt : formats) {
-      // numiterations 0 exercises the greedy-only path; blocksplitting
-      // 0 vs 1 exercises both block-layout branches.
+      // numiterations 0 exercises the auto (size-dependent) path;
+      // blocksplitting 0 vs 1 exercises both block-layout branches.
       EXPECT_FALSE(Compress(fmt, in, 0, 0).empty());
       EXPECT_FALSE(Compress(fmt, in, 5, 1).empty());
     }

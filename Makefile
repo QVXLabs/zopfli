@@ -19,9 +19,12 @@ else
   shared_soname = lib$(1).so.$(VERSION_MAJOR)
 endif
 
-override CFLAGS := -W -Wall -Wextra -ansi -pedantic -O3 -Wno-unused-function -fPIC $(CFLAGS)
-override CXXFLAGS := -W -Wall -Wextra -ansi -pedantic -O3 -fPIC $(CXXFLAGS)
-LDLIBS := -lm $(LDLIBS)
+# NDEBUG strips asserts and the ZopfliVerifyLenDist check for the release build.
+# User CFLAGS are appended after, so `make CFLAGS=-UNDEBUG` re-enables them.
+# C99 (for <stdint.h>) plus the GNU builtins the code uses (__builtin_clz).
+override CFLAGS := -W -Wall -Wextra -std=gnu99 -pedantic -O3 -DNDEBUG -fPIC $(CFLAGS)
+override CXXFLAGS := -W -Wall -Wextra -std=gnu++11 -pedantic -O3 -DNDEBUG -fPIC $(CXXFLAGS)
+LDLIBS := $(LDLIBS)
 
 ZOPFLILIB_SRC = src/zopfli/blocksplitter.c src/zopfli/cache.c\
                 src/zopfli/deflate.c src/zopfli/gzip_container.c\
@@ -45,12 +48,13 @@ all: zopfli libzopfli libzopfli.a zopflipng libzopflipng libzopflipng.a
 
 obj/%.o: %.c
 	@mkdir -p `dirname $@`
-	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
+	$(CC) $(CPPFLAGS) $(CFLAGS) -Werror -c $< -o $@
 
 obj/%.o: %.cc
 	@mkdir -p `dirname $@`
-	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -Werror -c $< -o $@
 
+# Vendored LodePNG: no -Werror so upstream's warnings don't break the build.
 obj/%.o: %.cpp
 	@mkdir -p `dirname $@`
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@

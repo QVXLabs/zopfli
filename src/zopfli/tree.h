@@ -15,6 +15,7 @@ limitations under the License.
 
 Author: lode.vandevenne@gmail.com (Lode Vandevenne)
 Author: jyrki.alakuijala@gmail.com (Jyrki Alakuijala)
+Author: afalls@qvxlabs.com (Ardavon Falls)
 */
 
 /*
@@ -24,7 +25,10 @@ Utilities for creating and using Huffman trees.
 #ifndef ZOPFLI_TREE_H_
 #define ZOPFLI_TREE_H_
 
+#include <stdint.h>
 #include <string.h>
+
+#include "katajainen.h"
 
 /*
 Calculates the bitlengths for the Huffman tree, based on the counts of each
@@ -34,18 +38,27 @@ void ZopfliCalculateBitLengths(const size_t* count, size_t n, int maxbits,
                                unsigned *bitlengths);
 
 /*
+As ZopfliCalculateBitLengths, but reuses caller-owned scratch (thread-safe when
+each thread passes its own).
+*/
+void ZopfliCalculateBitLengthsScratch(ZopfliKatajainenScratch* scratch,
+                                      const size_t* count, size_t n, int maxbits,
+                                      unsigned *bitlengths);
+
+/*
 Converts a series of Huffman tree bitlengths, to the bit values of the symbols.
 */
 void ZopfliLengthsToSymbols(const unsigned* lengths, size_t n, unsigned maxbits,
                             unsigned* symbols);
 
 /*
-Calculates the entropy of each symbol, based on the counts of each symbol. The
-result is similar to the result of ZopfliCalculateBitLengths, but with the
-actual theoritical bit lengths according to the entropy. Since the resulting
-values are fractional, they cannot be used to encode the tree specified by
-DEFLATE.
+Calculates the entropy (ideal bit length) of each symbol from its count, as
+fixed point with `frac` fractional bits (Q`frac`, frac <= 16): bitlengths[i] =
+-log2(count[i] / sum) scaled by 2^frac. Integer-only and deterministic across
+CPUs. These fractional costs drive the optimal parse; they cannot encode the
+DEFLATE tree (that uses ZopfliCalculateBitLengths).
 */
-void ZopfliCalculateEntropy(const size_t* count, size_t n, double* bitlengths);
+void ZopfliCalculateEntropy(const size_t* count, size_t n,
+                            uint32_t* bitlengths, int frac);
 
 #endif  /* ZOPFLI_TREE_H_ */

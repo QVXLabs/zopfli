@@ -15,6 +15,7 @@ limitations under the License.
 
 Author: lode.vandevenne@gmail.com (Lode Vandevenne)
 Author: jyrki.alakuijala@gmail.com (Jyrki Alakuijala)
+Author: afalls@qvxlabs.com (Ardavon Falls)
 */
 
 #include "lz77.h"
@@ -27,6 +28,7 @@ Author: jyrki.alakuijala@gmail.com (Jyrki Alakuijala)
 
 void ZopfliInitLZ77Store(const unsigned char* data, ZopfliLZ77Store* store) {
   store->size = 0;
+  store->cap = 0;
   store->litlens = 0;
   store->dists = 0;
   store->pos = 0;
@@ -49,6 +51,42 @@ void ZopfliCleanLZ77Store(ZopfliLZ77Store* store) {
 
 static size_t CeilDiv(size_t a, size_t b) {
   return (a + b - 1) / b;
+}
+
+/*
+Grows the store's arrays to hold at least 'need' lz77 symbols, reusing the
+existing allocation (geometric growth). The ll_counts/d_counts lengths are
+deterministic functions of the symbol capacity, so one capacity covers all
+seven arrays.
+*/
+static void ZopfliReserveLZ77Store(ZopfliLZ77Store* store, size_t need) {
+  size_t newcap, llc, dc;
+  if (need <= store->cap) return;
+  newcap = store->cap ? store->cap : 16;
+  while (newcap < need) newcap *= 2;
+  llc = ZOPFLI_NUM_LL * CeilDiv(newcap, ZOPFLI_NUM_LL);
+  dc = ZOPFLI_NUM_D * CeilDiv(newcap, ZOPFLI_NUM_D);
+  store->litlens = (unsigned short*)realloc(
+      store->litlens, sizeof(*store->litlens) * newcap);
+  store->dists = (unsigned short*)realloc(
+      store->dists, sizeof(*store->dists) * newcap);
+  store->pos = (size_t*)realloc(store->pos, sizeof(*store->pos) * newcap);
+  store->ll_symbol = (unsigned short*)realloc(
+      store->ll_symbol, sizeof(*store->ll_symbol) * newcap);
+  store->d_symbol = (unsigned short*)realloc(
+      store->d_symbol, sizeof(*store->d_symbol) * newcap);
+  store->ll_counts = (size_t*)realloc(
+      store->ll_counts, sizeof(*store->ll_counts) * llc);
+  store->d_counts = (size_t*)realloc(
+      store->d_counts, sizeof(*store->d_counts) * dc);
+  if (!store->litlens || !store->dists || !store->pos) exit(-1);
+  if (!store->ll_symbol || !store->d_symbol) exit(-1);
+  if (!store->ll_counts || !store->d_counts) exit(-1);
+  store->cap = newcap;
+}
+
+void ZopfliResetLZ77Store(ZopfliLZ77Store* store) {
+  store->size = 0;
 }
 
 void ZopfliCopyLZ77Store(
@@ -76,6 +114,7 @@ void ZopfliCopyLZ77Store(
   if (!dest->ll_counts || !dest->d_counts) exit(-1);
 
   dest->size = source->size;
+  dest->cap = source->size;
   for (i = 0; i < source->size; i++) {
     dest->litlens[i] = source->litlens[i];
     dest->dists[i] = source->dists[i];
@@ -98,54 +137,46 @@ context must be a ZopfliLZ77Store*.
 void ZopfliStoreLitLenDist(unsigned short length, unsigned short dist,
                            size_t pos, ZopfliLZ77Store* store) {
   size_t i;
-  /* Needed for using ZOPFLI_APPEND_DATA multiple times. */
   size_t origsize = store->size;
   size_t llstart = ZOPFLI_NUM_LL * (origsize / ZOPFLI_NUM_LL);
   size_t dstart = ZOPFLI_NUM_D * (origsize / ZOPFLI_NUM_D);
 
+  ZopfliReserveLZ77Store(store, origsize + 1);
+
   /* Everytime the index wraps around, a new cumulative histogram is made: we're
   keeping one histogram value per LZ77 symbol rather than a full histogram for
-  each to save memory. */
+  each to save memory. The new chunk copies the previous chunk's totals (or
+  zeros for the first chunk). */
   if (origsize % ZOPFLI_NUM_LL == 0) {
-    size_t llsize = origsize;
     for (i = 0; i < ZOPFLI_NUM_LL; i++) {
-      ZOPFLI_APPEND_DATA(
-          origsize == 0 ? 0 : store->ll_counts[origsize - ZOPFLI_NUM_LL + i],
-          &store->ll_counts, &llsize);
+      store->ll_counts[origsize + i] =
+          origsize == 0 ? 0 : store->ll_counts[origsize - ZOPFLI_NUM_LL + i];
     }
   }
   if (origsize % ZOPFLI_NUM_D == 0) {
-    size_t dsize = origsize;
     for (i = 0; i < ZOPFLI_NUM_D; i++) {
-      ZOPFLI_APPEND_DATA(
-          origsize == 0 ? 0 : store->d_counts[origsize - ZOPFLI_NUM_D + i],
-          &store->d_counts, &dsize);
+      store->d_counts[origsize + i] =
+          origsize == 0 ? 0 : store->d_counts[origsize - ZOPFLI_NUM_D + i];
     }
   }
 
-  ZOPFLI_APPEND_DATA(length, &store->litlens, &store->size);
-  store->size = origsize;
-  ZOPFLI_APPEND_DATA(dist, &store->dists, &store->size);
-  store->size = origsize;
-  ZOPFLI_APPEND_DATA(pos, &store->pos, &store->size);
+  store->litlens[origsize] = length;
+  store->dists[origsize] = dist;
+  store->pos[origsize] = pos;
   assert(length < 259);
 
   if (dist == 0) {
-    store->size = origsize;
-    ZOPFLI_APPEND_DATA(length, &store->ll_symbol, &store->size);
-    store->size = origsize;
-    ZOPFLI_APPEND_DATA(0, &store->d_symbol, &store->size);
+    store->ll_symbol[origsize] = length;
+    store->d_symbol[origsize] = 0;
     store->ll_counts[llstart + length]++;
   } else {
-    store->size = origsize;
-    ZOPFLI_APPEND_DATA(ZopfliGetLengthSymbol(length),
-                       &store->ll_symbol, &store->size);
-    store->size = origsize;
-    ZOPFLI_APPEND_DATA(ZopfliGetDistSymbol(dist),
-                       &store->d_symbol, &store->size);
+    store->ll_symbol[origsize] = ZopfliGetLengthSymbol(length);
+    store->d_symbol[origsize] = ZopfliGetDistSymbol(dist);
     store->ll_counts[llstart + ZopfliGetLengthSymbol(length)]++;
     store->d_counts[dstart + ZopfliGetDistSymbol(dist)]++;
   }
+
+  store->size = origsize + 1;
 }
 
 void ZopfliAppendLZ77Store(const ZopfliLZ77Store* store,
@@ -222,6 +253,7 @@ void ZopfliInitBlockState(const ZopfliOptions* options,
   s->options = options;
   s->blockstart = blockstart;
   s->blockend = blockend;
+  ZopfliInitKatajainenScratch(&s->katascratch);
 #ifdef ZOPFLI_LONGEST_MATCH_CACHE
   if (add_lmc) {
     s->lmc = (ZopfliLongestMatchCache*)malloc(sizeof(ZopfliLongestMatchCache));
@@ -233,6 +265,7 @@ void ZopfliInitBlockState(const ZopfliOptions* options,
 }
 
 void ZopfliCleanBlockState(ZopfliBlockState* s) {
+  ZopfliCleanKatajainenScratch(&s->katascratch);
 #ifdef ZOPFLI_LONGEST_MATCH_CACHE
   if (s->lmc) {
     ZopfliCleanCache(s->lmc);
@@ -275,6 +308,9 @@ void ZopfliVerifyLenDist(const unsigned char* data, size_t datasize, size_t pos,
 
   /* TODO(lode): make this only run in a debug compile, it's for assert only. */
   size_t i;
+
+  /* Read only by the assert below, which NDEBUG strips. */
+  (void)datasize;
 
   assert(pos + length <= datasize);
   for (i = 0; i < length; i++) {
@@ -357,7 +393,7 @@ static int TryGetFromLongestMatchCache(ZopfliBlockState* s,
     if (!sublen || s->lmc->length[lmcpos]
         <= ZopfliMaxCachedSublen(s->lmc, lmcpos, s->lmc->length[lmcpos])) {
       *length = s->lmc->length[lmcpos];
-      if (*length > *limit) *length = *limit;
+      if (*length > *limit) *length = (unsigned short)*limit;
       if (sublen) {
         ZopfliCacheToSublen(s->lmc, lmcpos, *length, sublen);
         *distance = sublen[*length];
@@ -382,7 +418,7 @@ Stores the found sublen, distance and length in the longest match cache, if
 possible.
 */
 static void StoreInLongestMatchCache(ZopfliBlockState* s,
-    size_t pos, size_t limit,
+    size_t pos, size_t limit, size_t size,
     const unsigned short* sublen,
     unsigned short distance, unsigned short length) {
   /* The LMC cache starts at the beginning of the block rather than the
@@ -394,7 +430,12 @@ static void StoreInLongestMatchCache(ZopfliBlockState* s,
   unsigned char cache_available = s->lmc && (s->lmc->length[lmcpos] == 0 ||
       s->lmc->dist[lmcpos] != 0);
 
-  if (s->lmc && limit == ZOPFLI_MAX_MATCH && sublen && !cache_available) {
+  /* Cache full-limit matches, and also end-of-block positions where the limit
+     was clamped to size - pos: there the stored match is the true maximum (it
+     physically can't be longer), so the sublen is complete. Caching these lets
+     the squeeze DP serve every position and skip the hash after iteration 1. */
+  if (s->lmc && (limit == ZOPFLI_MAX_MATCH || pos + limit >= size)
+      && sublen && !cache_available) {
     assert(s->lmc->length[lmcpos] == 1 && s->lmc->dist[lmcpos] == 0);
     s->lmc->dist[lmcpos] = length < ZOPFLI_MIN_MATCH ? 0 : distance;
     s->lmc->length[lmcpos] = length < ZOPFLI_MIN_MATCH ? 0 : length;
@@ -425,6 +466,8 @@ void ZopfliFindLongestMatch(ZopfliBlockState* s, const ZopfliHash* h,
   unsigned short* hprev = h->prev;
   int* hhashval = h->hashval;
   int hval = h->val;
+  /* hhashval is read only by asserts (line ~511), which NDEBUG strips. */
+  (void)hhashval;
 
 #ifdef ZOPFLI_LONGEST_MATCH_CACHE
   if (TryGetFromLongestMatchCache(s, pos, &limit, sublen, distance, length)) {
@@ -442,6 +485,10 @@ void ZopfliFindLongestMatch(ZopfliBlockState* s, const ZopfliHash* h,
        try. */
     *length = 0;
     *distance = 0;
+#ifdef ZOPFLI_LONGEST_MATCH_CACHE
+    /* Cache the no-match so the squeeze DP can serve this position too. */
+    StoreInLongestMatchCache(s, pos, limit, size, sublen, 0, 0);
+#endif
     return;
   }
 
@@ -482,14 +529,14 @@ void ZopfliFindLongestMatch(ZopfliBlockState* s, const ZopfliHash* h,
         unsigned short same0 = h->same[pos & ZOPFLI_WINDOW_MASK];
         if (same0 > 2 && *scan == *match) {
           unsigned short same1 = h->same[(pos - dist) & ZOPFLI_WINDOW_MASK];
-          unsigned short same = same0 < same1 ? same0 : same1;
-          if (same > limit) same = limit;
+          unsigned short same = ZOPFLI_MIN(same0, same1);
+          same = (unsigned short)ZOPFLI_MIN(same, limit);
           scan += same;
           match += same;
         }
 #endif
         scan = GetMatch(scan, match, arrayend, arrayend_safe);
-        currentlength = scan - &array[pos];  /* The found length. */
+        currentlength = (unsigned short)(scan - &array[pos]);  /* found len. */
       }
 
       if (currentlength > bestlength) {
@@ -531,7 +578,7 @@ void ZopfliFindLongestMatch(ZopfliBlockState* s, const ZopfliHash* h,
   }
 
 #ifdef ZOPFLI_LONGEST_MATCH_CACHE
-  StoreInLongestMatchCache(s, pos, limit, sublen, bestdist, bestlength);
+  StoreInLongestMatchCache(s, pos, limit, size, sublen, bestdist, bestlength);
 #endif
 
   assert(bestlength <= limit);
