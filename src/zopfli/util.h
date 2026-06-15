@@ -26,6 +26,7 @@ basic deflate specification values and generic program options.
 #ifndef ZOPFLI_UTIL_H_
 #define ZOPFLI_UTIL_H_
 
+#include <stdint.h>
 #include <string.h>
 #include <stdlib.h>
 
@@ -61,9 +62,12 @@ Set it to 0 to disable master blocks.
 #define ZOPFLI_MASTER_BLOCK_SIZE 1000000
 
 /*
-Used to initialize costs for example
+Sentinel larger than any real block-size/cost (in bits), for initializing a
+running minimum. Cost values are uint32_t (a block is < 2^31 bits), so UINT32_MAX
+exceeds any real value; same value on every platform. Only ever compared, never
+added, so it cannot overflow.
 */
-#define ZOPFLI_LARGE_FLOAT 1e30
+#define ZOPFLI_LARGE_COST UINT32_MAX
 
 /*
 Integer type for the squeeze optimal-parse cost accumulator. Kept 32-bit so the

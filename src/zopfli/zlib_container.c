@@ -15,6 +15,7 @@ limitations under the License.
 
 Author: lode.vandevenne@gmail.com (Lode Vandevenne)
 Author: jyrki.alakuijala@gmail.com (Jyrki Alakuijala)
+Author: afalls@qvxlabs.com (Ardavon Falls)
 */
 
 #include "zlib_container.h"
@@ -71,9 +72,11 @@ void ZopfliZlibCompress(const ZopfliOptions* options,
   ZOPFLI_APPEND_DATA(checksum % 256, out, outsize);
 
   if (options->verbose) {
+    /* Percent removed with 2 decimals, integer-only (basis points). */
+    long bp = insize ? (long)(((long long)insize - (long long)*outsize) * 10000
+                              / (long long)insize) : 0;
     fprintf(stderr,
-            "Original Size: %d, Zlib: %d, Compression: %f%% Removed\n",
-            (int)insize, (int)*outsize,
-            100.0 * (double)(insize - *outsize) / (double)insize);
+            "Original Size: %d, Zlib: %d, Compression: %ld.%02ld%% Removed\n",
+            (int)insize, (int)*outsize, bp / 100, (bp < 0 ? -bp : bp) % 100);
   }
 }

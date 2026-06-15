@@ -30,16 +30,16 @@ TEST(Deflate, BlockSizeAutoTypePicksSmallest) {
   ZopfliLZ77Store store;
   zopfli_test::GreedyStore(in, &store);
 
-  double s0 = ZopfliCalculateBlockSize(&store, 0, store.size, 0);
-  double s1 = ZopfliCalculateBlockSize(&store, 0, store.size, 1);
-  double s2 = ZopfliCalculateBlockSize(&store, 0, store.size, 2);
-  double best = ZopfliCalculateBlockSizeAutoType(&store, 0, store.size);
+  uint32_t s0 = ZopfliCalculateBlockSize(&store, 0, store.size, 0);
+  uint32_t s1 = ZopfliCalculateBlockSize(&store, 0, store.size, 1);
+  uint32_t s2 = ZopfliCalculateBlockSize(&store, 0, store.size, 2);
+  uint32_t best = ZopfliCalculateBlockSizeAutoType(&store, 0, store.size);
 
-  EXPECT_GT(s0, 0.0);
-  EXPECT_GT(s1, 0.0);
-  EXPECT_GT(s2, 0.0);
-  double min3 = std::min(s0, std::min(s1, s2));
-  EXPECT_NEAR(best, min3, 1e-6);
+  EXPECT_GT(s0, 0u);
+  EXPECT_GT(s1, 0u);
+  EXPECT_GT(s2, 0u);
+  uint32_t min3 = std::min(s0, std::min(s1, s2));
+  EXPECT_EQ(best, min3);
 
   ZopfliCleanLZ77Store(&store);
 }

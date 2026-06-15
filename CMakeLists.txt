@@ -2,6 +2,11 @@ cmake_minimum_required(VERSION 3.10)
 
 project(Zopfli VERSION 1.0.5 LANGUAGES C CXX)
 
+# C99 for <stdint.h> (fixed-width cost types). The default would usually be new
+# enough, but pin it so the dependency is explicit.
+set(CMAKE_C_STANDARD 99)
+set(CMAKE_C_STANDARD_REQUIRED ON)
+
 #
 # Options
 #
@@ -57,9 +62,7 @@ set_target_properties(libzopfli PROPERTIES
   VERSION ${PROJECT_VERSION}
   SOVERSION ${PROJECT_VERSION_MAJOR}
 )
-if(UNIX AND NOT (BEOS OR HAIKU))
-  target_link_libraries(libzopfli PUBLIC m)
-endif()
+# libzopfli is integer-only now; no libm needed.
 
 #
 # libzopflipng

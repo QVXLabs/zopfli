@@ -21,9 +21,10 @@ endif
 
 # NDEBUG strips asserts and the ZopfliVerifyLenDist check for the release build.
 # User CFLAGS are appended after, so `make CFLAGS=-UNDEBUG` re-enables them.
-override CFLAGS := -W -Wall -Wextra -ansi -pedantic -O3 -DNDEBUG -Wno-unused-function -fPIC $(CFLAGS)
-override CXXFLAGS := -W -Wall -Wextra -ansi -pedantic -O3 -DNDEBUG -fPIC $(CXXFLAGS)
-LDLIBS := -lm $(LDLIBS)
+# C99 (for <stdint.h>) plus the GNU builtins the code uses (__builtin_clz).
+override CFLAGS := -W -Wall -Wextra -std=gnu99 -pedantic -O3 -DNDEBUG -Wno-unused-function -fPIC $(CFLAGS)
+override CXXFLAGS := -W -Wall -Wextra -std=gnu++11 -pedantic -O3 -DNDEBUG -fPIC $(CXXFLAGS)
+LDLIBS := $(LDLIBS)
 
 ZOPFLILIB_SRC = src/zopfli/blocksplitter.c src/zopfli/cache.c\
                 src/zopfli/deflate.c src/zopfli/gzip_container.c\

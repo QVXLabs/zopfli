@@ -31,6 +31,29 @@ The source code of Zopfli is under `src/zopfli`. `zopfli_bin.c` is separate from
 the library and contains an example program to create very well compressed gzip
 files.
 
+## Deterministic, floating-point-free
+
+This fork's core library (`src/zopfli`) contains **no floating point**. The cost
+model that drives the optimal parse — including the entropy / `-log2`
+computation — is computed entirely in **integer fixed point** (`IntLog2Fixed`,
+with the precision derived from the per-block cost shift; block sizes and costs
+are `uint32_t`). Two consequences:
+
+- **Bit-identical output on every CPU.** Upstream zopfli computes symbol costs
+  with `libm`'s `log()`, whose result varies by platform, compiler, and FP mode
+  (x87 vs SSE, FMA contraction, `-ffast-math`); that can change which parse is
+  chosen and therefore the output bytes. Here the output is reproducible across
+  all of those — verified by building at `-O0`, `-O3`, and
+  `-O3 -ffast-math -ffp-contract=fast` and checking the compressed `md5` is
+  identical (with no FP in the code, these flags cannot change the result).
+- **Runs well on devices without an FPU.** No soft-float emulation and no `libm`
+  dependency, so the library is smaller and faster on embedded / microcontroller
+  targets. The build uses `-std=gnu99` (for `<stdint.h>`) and links no `-lm`.
+
+Compression ratio is within ~0.02% of the floating-point version (sometimes
+better). Note the output is **not** byte-identical to upstream zopfli — it
+defines a new, canonical, platform-independent encoding.
+
 ## Compression options
 
 Compression is controlled by `ZopfliOptions` (set defaults with

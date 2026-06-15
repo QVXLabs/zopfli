@@ -21,7 +21,7 @@ Author: afalls@qvxlabs.com (Ardavon Falls)
 #include "squeeze.h"
 
 #include <assert.h>
-#include <math.h>
+#include <stdint.h>
 #include <stdio.h>
 
 #include "blocksplitter.h"
@@ -43,10 +43,10 @@ typedef struct SymbolStats {
   /* The 32 unique dist symbols, not the 32768 possible dists. */
   size_t dists[ZOPFLI_NUM_D];
 
-  /* Length of each lit/len symbol in bits. */
-  double ll_symbols[ZOPFLI_NUM_LL];
-  /* Length of each dist symbol in bits. */
-  double d_symbols[ZOPFLI_NUM_D];
+  /* Entropy bit-length of each symbol, Q(shift) fixed point (the per-block cost
+  shift), i.e. ideal bits scaled by 2^shift. Feeds the cost model directly. */
+  uint32_t ll_symbols[ZOPFLI_NUM_LL];
+  uint32_t d_symbols[ZOPFLI_NUM_D];
 } SymbolStats;
 
 /* Sets everything to 0. */
@@ -69,18 +69,16 @@ static void CopyStats(SymbolStats* source, SymbolStats* dest) {
          ZOPFLI_NUM_D * sizeof(dest->d_symbols[0]));
 }
 
-/* Adds the bit lengths. */
-static void AddWeighedStatFreqs(const SymbolStats* stats1, double w1,
-                                const SymbolStats* stats2, double w2,
-                                SymbolStats* result) {
+/* result = stats1 + stats2/2 (the b/2 truncates identically to the old
+(size_t)(a*1.0 + b*0.5), so this is the same blend, integer-only). */
+static void AddStatFreqsHalf(const SymbolStats* stats1,
+                             const SymbolStats* stats2, SymbolStats* result) {
   size_t i;
   for (i = 0; i < ZOPFLI_NUM_LL; i++) {
-    result->litlens[i] =
-        (size_t) (stats1->litlens[i] * w1 + stats2->litlens[i] * w2);
+    result->litlens[i] = stats1->litlens[i] + stats2->litlens[i] / 2;
   }
   for (i = 0; i < ZOPFLI_NUM_D; i++) {
-    result->dists[i] =
-        (size_t) (stats1->dists[i] * w1 + stats2->dists[i] * w2);
+    result->dists[i] = stats1->dists[i] + stats2->dists[i] / 2;
   }
   result->litlens[256] = 1;  /* End symbol. */
 }
@@ -150,11 +148,6 @@ int ZopfliGetCostShift(size_t blocksize) {
   return shift;
 }
 
-/* Rounds a non-negative bit cost to fixed point with the given shift. */
-static ZopfliCost ScaleCost(double cost, int shift) {
-  return (ZopfliCost)(cost * (double)((size_t)1 << shift) + 0.5);
-}
-
 /* Fills in mincost: the cheapest cost any valid match can have. Only the 30
 real distance symbols are considered, matching the deflate spec. */
 static void SetMinMatchCost(CostCache* c) {
@@ -170,20 +163,21 @@ static void SetMinMatchCost(CostCache* c) {
   c->mincost = minll + mind;
 }
 
-/* Builds the cache from symbol statistics (the per-iteration cost model). */
+/* Builds the cache from symbol statistics (the per-iteration cost model). The
+entropy in stats is already Q(shift) fixed point, so it is the scaled cost
+directly; only the literal extra bits (length/dist) need the << shift. */
 static void BuildStatCostCache(const SymbolStats* stats, int shift,
                                CostCache* c) {
   int i;
   for (i = 0; i < 256; i++) {
-    c->lit_cost[i] = ScaleCost(stats->ll_symbols[i], shift);
+    c->lit_cost[i] = (ZopfliCost)stats->ll_symbols[i];
   }
   for (i = ZOPFLI_MIN_MATCH; i <= ZOPFLI_MAX_MATCH; i++) {
-    c->ll_cost[i] = ScaleCost(stats->ll_symbols[ZopfliGetLengthSymbol(i)],
-                              shift)
+    c->ll_cost[i] = (ZopfliCost)stats->ll_symbols[ZopfliGetLengthSymbol(i)]
         + ((ZopfliCost)ZopfliGetLengthExtraBits(i) << shift);
   }
   for (i = 0; i < 30; i++) {
-    c->d_cost[i] = ScaleCost(stats->d_symbols[i], shift)
+    c->d_cost[i] = (ZopfliCost)stats->d_symbols[i]
         + ((ZopfliCost)ZopfliGetDistSymbolExtraBits(i) << shift);
   }
   SetMinMatchCost(c);
@@ -463,14 +457,16 @@ static void FollowPath(const unsigned char* in, size_t instart, size_t inend,
   }
 }
 
-/* Calculates the entropy of the statistics */
-static void CalculateStatistics(SymbolStats* stats) {
-  ZopfliCalculateEntropy(stats->litlens, ZOPFLI_NUM_LL, stats->ll_symbols);
-  ZopfliCalculateEntropy(stats->dists, ZOPFLI_NUM_D, stats->d_symbols);
+/* Calculates the entropy of the statistics at the block's cost shift (Q(shift)
+fixed point), so the result feeds the cost model directly. */
+static void CalculateStatistics(SymbolStats* stats, int shift) {
+  ZopfliCalculateEntropy(stats->litlens, ZOPFLI_NUM_LL, stats->ll_symbols, shift);
+  ZopfliCalculateEntropy(stats->dists, ZOPFLI_NUM_D, stats->d_symbols, shift);
 }
 
 /* Appends the symbol statistics from the store. */
-static void GetStatistics(const ZopfliLZ77Store* store, SymbolStats* stats) {
+static void GetStatistics(const ZopfliLZ77Store* store, SymbolStats* stats,
+                          int shift) {
   size_t i;
   for (i = 0; i < store->size; i++) {
     if (store->dists[i] == 0) {
@@ -482,7 +478,7 @@ static void GetStatistics(const ZopfliLZ77Store* store, SymbolStats* stats) {
   }
   stats->litlens[256] = 1;  /* End symbol. */
 
-  CalculateStatistics(stats);
+  CalculateStatistics(stats, shift);
 }
 
 /*
@@ -538,9 +534,9 @@ void ZopfliLZ77Optimal(ZopfliBlockState *s,
       (ZopfliCost*)malloc(sizeof(*costs) * (blocksize + 1));
   int shift = ZopfliGetCostShift(blocksize);
   CostCache cache;
-  double cost;
-  double bestcost = ZOPFLI_LARGE_FLOAT;
-  double lastcost = 0;
+  uint32_t cost;
+  uint32_t bestcost = ZOPFLI_LARGE_COST;
+  uint32_t lastcost = 0;
   /* Try randomizing the costs a bit once the size stabilizes. */
   RanState ran_state;
   int lastrandomstep = -1;
@@ -560,7 +556,7 @@ void ZopfliLZ77Optimal(ZopfliBlockState *s,
 
   /* Initial run. */
   ZopfliLZ77Greedy(s, in, instart, inend, &currentstore, h);
-  GetStatistics(&currentstore, &stats);
+  GetStatistics(&currentstore, &stats, shift);
 
   /* Repeat statistics with each time the cost model from the previous stat
   run. Iteration 0 fills the cache gaps the greedy pass left, so it needs the
@@ -585,18 +581,18 @@ void ZopfliLZ77Optimal(ZopfliBlockState *s,
     }
     CopyStats(&stats, &laststats);
     ClearStatFreqs(&stats);
-    GetStatistics(&currentstore, &stats);
+    GetStatistics(&currentstore, &stats, shift);
     if (lastrandomstep != -1) {
       /* This makes it converge slower but better. Do it only once the
       randomness kicks in so that if the user does few iterations, it gives a
       better result sooner. */
-      AddWeighedStatFreqs(&stats, 1.0, &laststats, 0.5, &stats);
-      CalculateStatistics(&stats);
+      AddStatFreqsHalf(&stats, &laststats, &stats);
+      CalculateStatistics(&stats, shift);
     }
     if (i > 5 && cost == lastcost) {
       CopyStats(&beststats, &stats);
       RandomizeStatFreqs(&ran_state, &stats);
-      CalculateStatistics(&stats);
+      CalculateStatistics(&stats, shift);
       lastrandomstep = i;
     }
     lastcost = cost;

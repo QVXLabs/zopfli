@@ -26,6 +26,8 @@ Functions to compress according to the DEFLATE specification, using the
 "squeeze" LZ77 compression backend.
 */
 
+#include <stdint.h>
+
 #include "lz77.h"
 #include "zopfli.h"
 
@@ -77,27 +79,27 @@ dists: ll77 distances
 lstart: start of block
 lend: end of block (not inclusive)
 */
-double ZopfliCalculateBlockSize(const ZopfliLZ77Store* lz77,
-                                size_t lstart, size_t lend, int btype);
+uint32_t ZopfliCalculateBlockSize(const ZopfliLZ77Store* lz77,
+                                  size_t lstart, size_t lend, int btype);
 
 /*
 As ZopfliCalculateBlockSize, but reuses caller-owned scratch (thread-safe when
 each thread passes its own).
 */
-double ZopfliCalculateBlockSizeScratch(ZopfliKatajainenScratch* scratch,
-                                       const ZopfliLZ77Store* lz77,
-                                       size_t lstart, size_t lend, int btype);
+uint32_t ZopfliCalculateBlockSizeScratch(ZopfliKatajainenScratch* scratch,
+                                         const ZopfliLZ77Store* lz77,
+                                         size_t lstart, size_t lend, int btype);
 
 /*
 Calculates block size in bits, automatically using the best btype.
 */
-double ZopfliCalculateBlockSizeAutoType(const ZopfliLZ77Store* lz77,
-                                        size_t lstart, size_t lend);
+uint32_t ZopfliCalculateBlockSizeAutoType(const ZopfliLZ77Store* lz77,
+                                          size_t lstart, size_t lend);
 
 /*
 As ZopfliCalculateBlockSizeAutoType, but reuses caller-owned scratch.
 */
-double ZopfliCalculateBlockSizeAutoTypeScratch(
+uint32_t ZopfliCalculateBlockSizeAutoTypeScratch(
     ZopfliKatajainenScratch* scratch,
     const ZopfliLZ77Store* lz77, size_t lstart, size_t lend);
 

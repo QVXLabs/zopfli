@@ -4,11 +4,15 @@ Repo-specific guidance. General coding preferences live in the user-global
 CLAUDE.md; this file adds what's specific to this codebase.
 
 ## Language & style
-- **C89 / ANSI** — built with `-ansi -pedantic -W -Wall -Wextra`. No C99/C11:
-  - Declarations at the top of a block (no mixed declarations and statements).
+- **gnu99** — built with `-std=gnu99 -pedantic -W -Wall -Wextra` (C99 for
+  `<stdint.h>` fixed-width cost types, plus the GNU `__builtin_clz` the code
+  uses). Keep the conservative house style otherwise:
+  - Declarations at the top of a block (no mixed declarations and statements),
+    except short-lived locals in the few verbose-print blocks.
   - No VLAs. No `//` line comments — use `/* */` block comments.
-  - For `inline`, use a compiler-guarded macro (e.g. `__inline__` under
-    GCC/Clang), never bare `inline`.
+  - Fixed-width integers via `<stdint.h>` (`uint32_t`/`uint64_t`); avoid `size_t`
+    for fixed-width numeric values (it varies by platform). For `inline`, use a
+    compiler-guarded macro, never bare `inline`.
 - **80-column hard wrap** for source. Exception: Makefile flag lists, where
   breaking would harm grep/readability.
 - Comments concise, matching the existing files; explain *why*, not *what*.
@@ -51,8 +55,12 @@ This repo is an optimization effort. For any perf change:
 
 ## Architecture notes (hot path)
 - The cost model in `squeeze.c` is **fixed-point `int`** (`ZopfliCost`, per-block
-  shift from `ZopfliGetCostShift`). `ZopfliCalculateEntropy` and
-  `ZopfliCalculateBlockSize` remain floating-point on purpose.
+  shift from `ZopfliGetCostShift`). The whole core library is now **float-free
+  and deterministic across CPUs**: `ZopfliCalculateEntropy` uses an integer
+  fixed-point log2 (`IntLog2Fixed`, Q`shift`), and the block-size/splitter/cost
+  values are `uint32_t` (`IntLog2Fixed`'s mantissa square is `uint64_t`). Build
+  is gnu99 (`<stdint.h>`), no `-lm`. Keep it float-free (it targets FPU-less
+  devices and bit-reproducible output) — verify with the `-ffast-math` md5 test.
 - Nearly all time is in `ZopfliLZ77Optimal` → `LZ77OptimalRun` →
   `GetBestLengths` (forward DP: hash bookkeeping + `ZopfliFindLongestMatch` +
   cost DP). `FollowPath` no longer touches the hash — distances are carried
@@ -72,9 +80,6 @@ This repo is an optimization effort. For any perf change:
   the complexity.
 - One-step-ahead `__builtin_prefetch` in `ZopfliUpdateHash`: regressed ~8%
   (prefetch distance too short).
-- Making entropy fixed-point: ~0% (entropy is ~0.04% of runtime; its precision
-  is already discarded by `ScaleCost`). Only relevant for cross-platform
-  determinism, which would also require converting `ZopfliCalculateBlockSize`.
 - Ratio lever `ZOPFLI_MAX_CHAIN_HITS` 8192→32768: 0% size change on a mixed
   corpus and on constructed pathological input — the cap effectively never binds
   within the 32 KB window. Only costs speed.

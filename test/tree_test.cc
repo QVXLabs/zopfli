@@ -38,17 +38,22 @@ TEST(Tree, LengthsToSymbolsZeroLengthGetsNoCode) {
 
 TEST(Tree, Entropy) {
   size_t counts[4] = {2, 2, 2, 2};
-  double bitlengths[4] = {0};
-  ZopfliCalculateEntropy(counts, 4, bitlengths);
-  // Uniform distribution over 4 symbols => 2 bits each.
-  for (int i = 0; i < 4; i++) EXPECT_NEAR(bitlengths[i], 2.0, 1e-9);
+  uint32_t bitlengths[4] = {0};
+  ZopfliCalculateEntropy(counts, 4, bitlengths, 16);
+  // Uniform over 4 symbols => 2 bits each; Q16 fixed point = 2 << 16 (exact:
+  // log2(8) - log2(2) = 3 - 1, both powers of two).
+  for (int i = 0; i < 4; i++) EXPECT_EQ(bitlengths[i], 2u << 16);
 }
 
-TEST(Tree, EntropyZeroCountClamped) {
+TEST(Tree, EntropyZeroCount) {
   size_t counts[3] = {0, 0, 5};
-  double bitlengths[3] = {0};
-  ZopfliCalculateEntropy(counts, 3, bitlengths);
-  for (int i = 0; i < 3; i++) EXPECT_GE(bitlengths[i], 0.0);
+  uint32_t bitlengths[3] = {0};
+  ZopfliCalculateEntropy(counts, 3, bitlengths, 16);
+  // The only present symbol costs 0 bits; absent symbols are costed as count 1,
+  // i.e. log2(sum) > 0. Integer result is exactly >= 0 (no float clamp needed).
+  EXPECT_EQ(bitlengths[2], 0u);
+  EXPECT_GT(bitlengths[0], 0u);
+  EXPECT_GT(bitlengths[1], 0u);
 }
 
 }  // namespace

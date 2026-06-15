@@ -21,7 +21,7 @@ Author: afalls@qvxlabs.com (Ardavon Falls)
 #include "tree.h"
 
 #include <assert.h>
-#include <math.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -69,28 +69,43 @@ void ZopfliLengthsToSymbols(const unsigned* lengths, size_t n, unsigned maxbits,
   free(next_code);
 }
 
-void ZopfliCalculateEntropy(const size_t* count, size_t n, double* bitlengths) {
-  static const double kInvLog2 = 1.4426950408889;  /* 1.0 / log(2.0) */
-  unsigned sum = 0;
+/*
+log2(x) as a Q`frac` fixed-point value (frac <= 16, x >= 1). Integer-only and
+deterministic. clz gives both the integer part (31 - clz) and the shift that
+normalizes the mantissa to Q31 [2^31, 2^32). The fractional part is the classic
+square-and-compare on that mantissa (its square needs 64 bits). One guard bit is
+computed then rounded.
+*/
+static uint32_t IntLog2Fixed(uint32_t x, int frac) {
+  int lz = __builtin_clz(x);              /* x >= 1, so 0 <= lz <= 31. */
+  uint64_t m = (uint64_t)x << lz;         /* Q31 mantissa, [2^31, 2^32). */
+  uint32_t fracpart = 0;
+  int b;
+  for (b = 0; b <= frac; b++) {  /* frac + 1 bits (one guard bit). */
+    m = (m * m) >> 31;          /* square, keep Q31; now in [2^31, 2^33). */
+    fracpart <<= 1;
+    if (m >> 32) { fracpart |= 1; m >>= 1; }  /* mantissa^2 >= 2 -> emit a bit. */
+  }
+  fracpart = (fracpart + 1) >> 1;  /* round the guard bit away. */
+  return ((unsigned)(31 - lz) << frac) + fracpart;
+}
+
+void ZopfliCalculateEntropy(const size_t* count, size_t n,
+                            uint32_t* bitlengths, int frac) {
+  uint32_t sum = 0;
   unsigned i;
-  double log2sum;
+  uint32_t log2sum;
   for (i = 0; i < n; ++i) {
     sum += count[i];
   }
-  log2sum = (sum == 0 ? log(n) : log(sum)) * kInvLog2;
+  log2sum = IntLog2Fixed(sum == 0 ? (uint32_t)n : sum, frac);
   for (i = 0; i < n; ++i) {
-    /* When the count of the symbol is 0, but its cost is requested anyway, it
-    means the symbol will appear at least once anyway, so give it the cost as if
-    its count is 1.*/
-    if (count[i] == 0) bitlengths[i] = log2sum;
-    else bitlengths[i] = log2sum - log(count[i]) * kInvLog2;
-    /* Depending on compiler and architecture, the above subtraction of two
-    floating point numbers may give a negative result very close to zero
-    instead of zero (e.g. -5.973954e-17 with gcc 4.1.2 on Ubuntu 11.4). Clamp
-    it to zero. These floating point imprecisions do not affect the cost model
-    significantly so this is ok. */
-    if (bitlengths[i] < 0 && bitlengths[i] > -1e-5) bitlengths[i] = 0;
-    assert(bitlengths[i] >= 0);
+    /* When the count is 0 but its cost is requested, the symbol will appear at
+    least once, so cost it as count 1: log2sum - log2(1) = log2sum. log2 is
+    monotonic so log2(count) <= log2sum, hence the result is exactly >= 0. */
+    bitlengths[i] = count[i] == 0
+        ? log2sum
+        : log2sum - IntLog2Fixed((uint32_t)count[i], frac);
   }
 }
 
