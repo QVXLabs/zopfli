@@ -39,10 +39,14 @@ void ZopfliInitCache(size_t blocksize, ZopfliLongestMatchCache* lmc) {
   lmc->pool_used = 0;
   lmc->all_complete = 1;
   lmc->pool = (unsigned char*)malloc(3 * lmc->pool_cap);
-  if (lmc->pool == NULL || lmc->run_off == NULL) {
+  /* blocksize == 0 makes every malloc above a malloc(0), which may return NULL
+  without being an error; nothing below is read for an empty block. Otherwise
+  any NULL is a real allocation failure (length/dist are written just below). */
+  if (blocksize != 0 && (lmc->length == NULL || lmc->dist == NULL ||
+                         lmc->run_off == NULL || lmc->pool == NULL)) {
     fprintf(stderr,
-        "Error: Out of memory. Tried allocating %lu bytes of memory.\n",
-        (unsigned long)(3 * lmc->pool_cap));
+        "Error: Out of memory. Tried allocating %zu bytes of memory.\n",
+        3 * lmc->pool_cap);
     exit (EXIT_FAILURE);
   }
 

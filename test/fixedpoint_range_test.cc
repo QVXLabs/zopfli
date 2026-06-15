@@ -6,9 +6,9 @@
 
 // Range coverage for the fixed-point optimal-parse cost model. The squeeze
 // accumulator is a 32-bit integer with a per-block fractional shift; these
-// tests span block sizes from a single byte (largest shift) through the master
-// block boundary (smallest shift) to prove the shift never lets the accumulator
-// overflow and that the parse stays correct across the whole range.
+// tests span block sizes from a single byte (largest shift) up to the largest
+// supported block, ZOPFLI_COST_MAX_BLOCK_SIZE (shift 0), to prove the shift
+// never lets the accumulator overflow and that the parse stays correct.
 
 namespace {
 
@@ -27,15 +27,18 @@ std::vector<unsigned char> Repetitive(size_t n) {
 //    every block size, is in range, and shrinks as blocks grow. This proves the
 //    overflow bound directly, without depending on input data.
 TEST(FixedPointRange, CostShiftInvariant) {
+  // Includes 2^22, 2^23 and the maximum supported block (2^24) so the small
+  // shifts (2, 1, 0) the contract allows are actually exercised.
   const size_t sizes[] = {1, 2, 256, 257, 300, 8192, 65536, 262144,
-                          999999, 1000000, 1000001, 1500000, 2000000};
+                          999999, 1000000, 1000001, 1500000, 2000000,
+                          4194304, 8388608, ZOPFLI_COST_MAX_BLOCK_SIZE};
   int prev = 100;
   size_t i;
   for (i = 0; i < sizeof(sizes) / sizeof(sizes[0]); i++) {
     int shift = ZopfliGetCostShift(sizes[i]);
     // Worst case is ~32 bits per position; scaled it must stay below 2^30.
     unsigned long long scaled = ((unsigned long long)32 * sizes[i]) << shift;
-    EXPECT_GE(shift, 3);
+    EXPECT_GE(shift, 0);
     EXPECT_LE(shift, 16);
     EXPECT_LT(scaled, (1ULL << 30)) << "overflow risk at blocksize "
                                     << sizes[i];

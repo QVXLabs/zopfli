@@ -173,11 +173,11 @@ static void PrintBlockSplitPoints(const ZopfliLZ77Store* lz77,
 
   fprintf(stderr, "block split points: ");
   for (i = 0; i < npoints; i++) {
-    fprintf(stderr, "%d ", (int)splitpoints[i]);
+    fprintf(stderr, "%zu ", splitpoints[i]);
   }
   fprintf(stderr, "(hex:");
   for (i = 0; i < npoints; i++) {
-    fprintf(stderr, " %x", (int)splitpoints[i]);
+    fprintf(stderr, " %zx", splitpoints[i]);
   }
   fprintf(stderr, ")\n");
 

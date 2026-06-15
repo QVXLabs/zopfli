@@ -752,7 +752,7 @@ static void AddLZ77Block(ZopfliKatajainenScratch* scratch,
     detect_tree_size = *outsize;
     AddDynamicTree(scratch, ll_lengths, d_lengths, bp, out, outsize);
     if (options->verbose) {
-      fprintf(stderr, "treesize: %d\n", (int)(*outsize - detect_tree_size));
+      fprintf(stderr, "treesize: %zu\n", *outsize - detect_tree_size);
     }
   }
 
@@ -771,9 +771,8 @@ static void AddLZ77Block(ZopfliKatajainenScratch* scratch,
   }
   compressed_size = *outsize - detect_block_size;
   if (options->verbose) {
-    fprintf(stderr, "compressed block size: %d (%dk) (unc: %d)\n",
-           (int)compressed_size, (int)(compressed_size / 1024),
-           (int)(uncompressed_size));
+    fprintf(stderr, "compressed block size: %zu (%zuk) (unc: %zu)\n",
+           compressed_size, compressed_size / 1024, uncompressed_size);
   }
 }
 
@@ -963,7 +962,6 @@ static int AutoIterations(size_t insize) {
 void ZopfliDeflate(const ZopfliOptions* options, int btype, int final,
                    const unsigned char* in, size_t insize,
                    unsigned char* bp, unsigned char** out, size_t* outsize) {
- size_t offset = *outsize;
   size_t offset = *outsize;
   ZopfliOptions opts = *options;
   assert(opts.numiterations >= 0);
@@ -972,8 +970,6 @@ void ZopfliDeflate(const ZopfliOptions* options, int btype, int final,
     fprintf(stderr, "Auto iterations: %d (input %zu bytes)\n",
             opts.numiterations, insize);
   }
-           opts.numiterations, (unsigned long)insize);
- }
   {
   /* Effective master block size. Clamp to ZOPFLI_COST_MAX_BLOCK_SIZE (and use
   it when master blocks are disabled) so a part never exceeds what the 32-bit
@@ -1000,8 +996,8 @@ void ZopfliDeflate(const ZopfliOptions* options, int btype, int final,
                               / (long long)insize) : 0;
     long abp = bp < 0 ? -bp : bp;  /* keep the sign for small negatives */
     fprintf(stderr,
-            "Original Size: %lu, Deflate: %lu, Compression: %s%ld.%02ld%% Removed\n",
-            (unsigned long)insize, (unsigned long)comp,
+            "Original Size: %zu, Deflate: %zu, Compression: %s%ld.%02ld%% Removed\n",
+            insize, comp,
             bp < 0 ? "-" : "", abp / 100, abp % 100);
   }
 }

@@ -122,7 +122,7 @@ void ZopfliGzipCompress(const ZopfliOptions* options,
                               / (long long)insize) : 0;
     long abp = bp < 0 ? -bp : bp;  /* keep the sign for small negatives */
     fprintf(stderr,
-            "Original Size: %d, Gzip: %d, Compression: %s%ld.%02ld%% Removed\n",
-            (int)insize, (int)*outsize, bp < 0 ? "-" : "", abp / 100, abp % 100);
+            "Original Size: %zu, Gzip: %zu, Compression: %s%ld.%02ld%% Removed\n",
+            insize, *outsize, bp < 0 ? "-" : "", abp / 100, abp % 100);
   }
 }
