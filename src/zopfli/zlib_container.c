@@ -15,6 +15,7 @@ limitations under the License.
 
 Author: lode.vandevenne@gmail.com (Lode Vandevenne)
 Author: jyrki.alakuijala@gmail.com (Jyrki Alakuijala)
+Author: afalls@qvxlabs.com (Ardy123)
 */
 
 #include "zlib_container.h"
@@ -33,7 +34,7 @@ static unsigned adler32(const unsigned char* data, size_t size)
   unsigned s2 = 1 >> 16;
 
   while (size > 0) {
-    size_t amount = size > sums_overflow ? sums_overflow : size;
+    size_t amount = ZOPFLI_MIN(size, sums_overflow);
     size -= amount;
     while (amount > 0) {
       s1 += (*data++);
@@ -71,9 +72,12 @@ void ZopfliZlibCompress(const ZopfliOptions* options,
   ZOPFLI_APPEND_DATA(checksum % 256, out, outsize);
 
   if (options->verbose) {
+    /* Percent removed with 2 decimals, integer-only (basis points). */
+    long bp = insize ? (long)(((long long)insize - (long long)*outsize) * 10000
+                              / (long long)insize) : 0;
+    long abp = bp < 0 ? -bp : bp;  /* keep the sign for small negatives */
     fprintf(stderr,
-            "Original Size: %d, Zlib: %d, Compression: %f%% Removed\n",
-            (int)insize, (int)*outsize,
-            100.0 * (double)(insize - *outsize) / (double)insize);
+            "Original Size: %zu, Zlib: %zu, Compression: %s%ld.%02ld%% Removed\n",
+            insize, *outsize, bp < 0 ? "-" : "", abp / 100, abp % 100);
   }
 }

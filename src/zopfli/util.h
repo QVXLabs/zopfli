@@ -15,6 +15,7 @@ limitations under the License.
 
 Author: lode.vandevenne@gmail.com (Lode Vandevenne)
 Author: jyrki.alakuijala@gmail.com (Jyrki Alakuijala)
+Author: afalls@qvxlabs.com (Ardy123)
 */
 
 /*
@@ -25,8 +26,29 @@ basic deflate specification values and generic program options.
 #ifndef ZOPFLI_UTIL_H_
 #define ZOPFLI_UTIL_H_
 
+#include <stdint.h>
 #include <string.h>
 #include <stdlib.h>
+
+/* Inline qualifier for header helpers; MSVC's C spells it `__inline`. */
+#ifdef _MSC_VER
+#define ZOPFLI_INLINE static __inline
+#else
+#define ZOPFLI_INLINE static inline
+#endif
+
+/* Count-leading-zeros support: clang/GCC have __builtin_clz; MSVC's C compiler
+uses the _BitScanReverse intrinsic (anything else falls back to a loop). */
+#if defined(__has_builtin)
+# if __has_builtin(__builtin_clz)
+#  define ZOPFLI_HAS_BUILTIN_CLZ
+# endif
+#elif defined(__GNUC__) && (__GNUC__ * 100 + __GNUC_MINOR__ >= 304)
+# define ZOPFLI_HAS_BUILTIN_CLZ
+#endif
+#if !defined(ZOPFLI_HAS_BUILTIN_CLZ) && defined(_MSC_VER)
+# include <intrin.h>
+#endif
 
 /* Minimum and maximum length that can be encoded in deflate. */
 #define ZOPFLI_MAX_MATCH 258
@@ -60,9 +82,31 @@ Set it to 0 to disable master blocks.
 #define ZOPFLI_MASTER_BLOCK_SIZE 1000000
 
 /*
-Used to initialize costs for example
+Largest part (in bytes) the optimal-parse cost model can represent. ZopfliCost
+is 32-bit and a block costs < 32 * blocksize bits, so 32 * blocksize must stay
+<= 2^29 (see ZopfliGetCostShift), capping a safe block at 2^24 bytes. The
+master-block loop clamps part sizes to this even when ZOPFLI_MASTER_BLOCK_SIZE
+is 0 (disabled) or larger, so the cost DP can never overflow.
 */
-#define ZOPFLI_LARGE_FLOAT 1e30
+#define ZOPFLI_COST_MAX_BLOCK_SIZE ((uint32_t)1 << 24)
+
+/*
+Sentinel larger than any real block-size/cost (in bits), for initializing a
+running minimum. Cost values are uint32_t (a block is < 2^31 bits), so UINT32_MAX
+exceeds any real value; same value on every platform. Only ever compared, never
+added, so it cannot overflow.
+*/
+#define ZOPFLI_LARGE_COST UINT32_MAX
+
+/*
+Integer type for the squeeze optimal-parse cost accumulator. Kept 32-bit so the
+hot per-byte costs[] array and its add/compare stay single-word, which matters
+on 32-bit processors. `int` is 32-bit on every ILP32 and LP64 target of
+interest, so no width detection is needed. Costs are stored in fixed point with
+a per-block shift (see squeeze.c); the shift is chosen so the worst-case
+accumulated cost cannot overflow this type.
+*/
+typedef int ZopfliCost;
 
 /*
 For longest match cache. max 256. Uses huge amounts of memory but makes it
@@ -120,6 +164,12 @@ varies from file to file.
 */
 #define ZOPFLI_LAZY_MATCHING
 
+/* Integer min and absolute difference. Function-like macros so they work for
+any integer type used in the hot path (int/size_t/unsigned/unsigned short)
+without truncation. Args are evaluated twice: pass side-effect-free operands. */
+#define ZOPFLI_MIN(a, b) ((a) < (b) ? (a) : (b))
+#define ZOPFLI_ABS_DIFF(x, y) ((x) > (y) ? (x) - (y) : (y) - (x))
+
 /*
 Appends value to dynamically allocated memory, doubling its allocation size
 whenever needed.
@@ -154,5 +204,19 @@ equal than *size.
 }
 #endif
 
+/* Number of leading zero bits in a 32-bit value; x must be nonzero. */
+ZOPFLI_INLINE int ZopfliCLZ32(uint32_t x) {
+#if defined(ZOPFLI_HAS_BUILTIN_CLZ)
+  return __builtin_clz(x);
+#elif defined(_MSC_VER)
+  unsigned long idx;
+  _BitScanReverse(&idx, x);
+  return 31 - (int)idx;
+#else
+  int n;
+  for (n = 0; !(x & 0x80000000u); ++n) x <<= 1;
+  return n;
+#endif
+}
 
 #endif  /* ZOPFLI_UTIL_H_ */

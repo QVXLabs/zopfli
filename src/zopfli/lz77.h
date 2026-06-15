@@ -15,6 +15,7 @@ limitations under the License.
 
 Author: lode.vandevenne@gmail.com (Lode Vandevenne)
 Author: jyrki.alakuijala@gmail.com (Jyrki Alakuijala)
+Author: afalls@qvxlabs.com (Ardy123)
 */
 
 /*
@@ -29,6 +30,7 @@ compression.
 
 #include "cache.h"
 #include "hash.h"
+#include "katajainen.h"
 #include "zopfli.h"
 
 /*
@@ -46,6 +48,7 @@ typedef struct ZopfliLZ77Store {
   unsigned short* dists;  /* If 0: indicates literal in corresponding litlens,
       if > 0: length in corresponding litlens, this is the distance. */
   size_t size;
+  size_t cap;  /* Allocated capacity in lz77 symbols, for reuse across runs. */
 
   const unsigned char* data;  /* original data */
   size_t* pos;  /* position in data where this LZ77 command begins */
@@ -63,6 +66,9 @@ typedef struct ZopfliLZ77Store {
 
 void ZopfliInitLZ77Store(const unsigned char* data, ZopfliLZ77Store* store);
 void ZopfliCleanLZ77Store(ZopfliLZ77Store* store);
+/* Empties the store (size 0) but keeps its allocation, so it can be refilled
+without reallocating. */
+void ZopfliResetLZ77Store(ZopfliLZ77Store* store);
 void ZopfliCopyLZ77Store(const ZopfliLZ77Store* source, ZopfliLZ77Store* dest);
 void ZopfliStoreLitLenDist(unsigned short length, unsigned short dist,
                            size_t pos, ZopfliLZ77Store* store);
@@ -94,6 +100,11 @@ typedef struct ZopfliBlockState {
   /* The start (inclusive) and end (not inclusive) of the current block. */
   size_t blockstart;
   size_t blockend;
+
+  /* Reused scratch for length-limited Huffman code construction, so the hot
+  block-size evaluations don't malloc/free per call. Per block state, so
+  thread-safe. */
+  ZopfliKatajainenScratch katascratch;
 } ZopfliBlockState;
 
 void ZopfliInitBlockState(const ZopfliOptions* options,
