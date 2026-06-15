@@ -309,6 +309,9 @@ void ZopfliVerifyLenDist(const unsigned char* data, size_t datasize, size_t pos,
   /* TODO(lode): make this only run in a debug compile, it's for assert only. */
   size_t i;
 
+  /* Read only by the assert below, which NDEBUG strips. */
+  (void)datasize;
+
   assert(pos + length <= datasize);
   for (i = 0; i < length; i++) {
     if (data[pos - dist + i] != data[pos + i]) {
@@ -463,6 +466,8 @@ void ZopfliFindLongestMatch(ZopfliBlockState* s, const ZopfliHash* h,
   unsigned short* hprev = h->prev;
   int* hhashval = h->hashval;
   int hval = h->val;
+  /* hhashval is read only by asserts (line ~511), which NDEBUG strips. */
+  (void)hhashval;
 
 #ifdef ZOPFLI_LONGEST_MATCH_CACHE
   if (TryGetFromLongestMatchCache(s, pos, &limit, sublen, distance, length)) {
@@ -524,8 +529,8 @@ void ZopfliFindLongestMatch(ZopfliBlockState* s, const ZopfliHash* h,
         unsigned short same0 = h->same[pos & ZOPFLI_WINDOW_MASK];
         if (same0 > 2 && *scan == *match) {
           unsigned short same1 = h->same[(pos - dist) & ZOPFLI_WINDOW_MASK];
-          unsigned short same = same0 < same1 ? same0 : same1;
-          if (same > limit) same = limit;
+          unsigned short same = ZOPFLI_MIN(same0, same1);
+          same = ZOPFLI_MIN(same, limit);
           scan += same;
           match += same;
         }

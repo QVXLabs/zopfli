@@ -156,7 +156,7 @@ static size_t EncodeTree(ZopfliKatajainenScratch* scratch,
     if (symbol == 0 && count >= 3) {
       if (use_18) {
         while (count >= 11) {
-          unsigned count2 = count > 138 ? 138 : count;
+          unsigned count2 = ZOPFLI_MIN(count, 138u);
           if (!size_only) {
             ZOPFLI_APPEND_DATA(18, &rle, &rle_size);
             ZOPFLI_APPEND_DATA(count2 - 11, &rle_bits, &rle_bits_size);
@@ -167,7 +167,7 @@ static size_t EncodeTree(ZopfliKatajainenScratch* scratch,
       }
       if (use_17) {
         while (count >= 3) {
-          unsigned count2 = count > 10 ? 10 : count;
+          unsigned count2 = ZOPFLI_MIN(count, 10u);
           if (!size_only) {
             ZOPFLI_APPEND_DATA(17, &rle, &rle_size);
             ZOPFLI_APPEND_DATA(count2 - 3, &rle_bits, &rle_bits_size);
@@ -187,7 +187,7 @@ static size_t EncodeTree(ZopfliKatajainenScratch* scratch,
         ZOPFLI_APPEND_DATA(0, &rle_bits, &rle_bits_size);
       }
       while (count >= 3) {
-        unsigned count2 = count > 6 ? 6 : count;
+        unsigned count2 = ZOPFLI_MIN(count, 6u);
         if (!size_only) {
           ZOPFLI_APPEND_DATA(16, &rle, &rle_size);
           ZOPFLI_APPEND_DATA(count2 - 3, &rle_bits, &rle_bits_size);
@@ -335,6 +335,9 @@ static void AddLZ77Data(const ZopfliLZ77Store* lz77,
     }
   }
   assert(expected_data_size == 0 || testlength == expected_data_size);
+  /* Read only by the assert above, which NDEBUG strips. */
+  (void)expected_data_size;
+  (void)testlength;
 }
 
 static void GetFixedTree(unsigned* ll_lengths, unsigned* d_lengths) {
@@ -424,13 +427,6 @@ static size_t CalculateBlockSymbolSize(const unsigned* ll_lengths,
   }
 }
 
-static size_t AbsDiff(size_t x, size_t y) {
-  if (x > y)
-    return x - y;
-  else
-    return y - x;
-}
-
 /*
 Changes the population counts in a way that the consequent Huffman tree
 compression, especially its rle-part, will be more likely to compress this data
@@ -485,7 +481,7 @@ void OptimizeHuffmanForRle(int length, size_t* counts) {
   for (i = 0; i < length + 1; ++i) {
     if (i == length || good_for_rle[i]
         /* Heuristic for selecting the stride ranges to collapse. */
-        || AbsDiff(counts[i], limit) >= 4) {
+        || ZOPFLI_ABS_DIFF(counts[i], limit) >= 4) {
       if (stride >= 4 || (stride >= 3 && sum == 0)) {
         /* The stride must end, collapse what we have, if we have enough (4). */
         int count = (sum + stride / 2) / stride;

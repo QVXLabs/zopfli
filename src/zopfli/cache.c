@@ -115,7 +115,7 @@ void ZopfliCacheToSublen(const ZopfliLongestMatchCache* lmc,
   for (;;) {
     unsigned runlen = run[0] + 3;
     unsigned dist = run[1] + 256 * run[2];
-    unsigned hi = runlen < length ? runlen : (unsigned)length;
+    unsigned hi = ZOPFLI_MIN(runlen, (unsigned)length);
     for (i = prevlength; i <= hi; i++) {
       sublen[i] = dist;
     }

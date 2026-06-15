@@ -30,6 +30,30 @@ basic deflate specification values and generic program options.
 #include <string.h>
 #include <stdlib.h>
 
+/* Inline qualifier for header helpers; MSVC's C spells it `__inline`. */
+#ifdef _MSC_VER
+#define ZOPFLI_INLINE static __inline
+#else
+#define ZOPFLI_INLINE static inline
+#endif
+
+/* Count-leading-zeros support: clang/GCC have __builtin_clz; MSVC's C compiler
+uses the _BitScanReverse intrinsic. ZOPFLI_HAS_FAST_CLZ marks either as present
+(callers can use it to pick a bit-twiddling path over a scalar fallback). */
+#if defined(__has_builtin)
+# if __has_builtin(__builtin_clz)
+#  define ZOPFLI_HAS_BUILTIN_CLZ
+# endif
+#elif defined(__GNUC__) && (__GNUC__ * 100 + __GNUC_MINOR__ >= 304)
+# define ZOPFLI_HAS_BUILTIN_CLZ
+#endif
+#if defined(ZOPFLI_HAS_BUILTIN_CLZ)
+# define ZOPFLI_HAS_FAST_CLZ
+#elif defined(_MSC_VER)
+# include <intrin.h>
+# define ZOPFLI_HAS_FAST_CLZ
+#endif
+
 /* Minimum and maximum length that can be encoded in deflate. */
 #define ZOPFLI_MAX_MATCH 258
 #define ZOPFLI_MIN_MATCH 3
@@ -135,6 +159,12 @@ varies from file to file.
 */
 #define ZOPFLI_LAZY_MATCHING
 
+/* Integer min and absolute difference. Function-like macros so they work for
+any integer type used in the hot path (int/size_t/unsigned/unsigned short)
+without truncation. Args are evaluated twice: pass side-effect-free operands. */
+#define ZOPFLI_MIN(a, b) ((a) < (b) ? (a) : (b))
+#define ZOPFLI_ABS_DIFF(x, y) ((x) > (y) ? (x) - (y) : (y) - (x))
+
 /*
 Appends value to dynamically allocated memory, doubling its allocation size
 whenever needed.
@@ -169,5 +199,19 @@ equal than *size.
 }
 #endif
 
+/* Number of leading zero bits in a 32-bit value; x must be nonzero. */
+ZOPFLI_INLINE int ZopfliCLZ32(uint32_t x) {
+#if defined(ZOPFLI_HAS_BUILTIN_CLZ)
+  return __builtin_clz(x);
+#elif defined(_MSC_VER)
+  unsigned long idx;
+  _BitScanReverse(&idx, x);
+  return 31 - (int)idx;
+#else
+  int n;
+  for (n = 0; !(x & 0x80000000u); ++n) x <<= 1;
+  return n;
+#endif
+}
 
 #endif  /* ZOPFLI_UTIL_H_ */

@@ -34,7 +34,7 @@ static unsigned adler32(const unsigned char* data, size_t size)
   unsigned s2 = 1 >> 16;
 
   while (size > 0) {
-    size_t amount = size > sums_overflow ? sums_overflow : size;
+    size_t amount = ZOPFLI_MIN(size, sums_overflow);
     size -= amount;
     while (amount > 0) {
       s1 += (*data++);

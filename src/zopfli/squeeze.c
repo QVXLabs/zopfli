@@ -155,10 +155,10 @@ static void SetMinMatchCost(CostCache* c) {
   ZopfliCost minll = c->ll_cost[ZOPFLI_MIN_MATCH];
   ZopfliCost mind = c->d_cost[0];
   for (i = ZOPFLI_MIN_MATCH + 1; i <= ZOPFLI_MAX_MATCH; i++) {
-    if (c->ll_cost[i] < minll) minll = c->ll_cost[i];
+    minll = ZOPFLI_MIN(minll, c->ll_cost[i]);
   }
   for (i = 1; i < 30; i++) {
-    if (c->d_cost[i] < mind) mind = c->d_cost[i];
+    mind = ZOPFLI_MIN(mind, c->d_cost[i]);
   }
   c->mincost = minll + mind;
 }
@@ -202,10 +202,6 @@ static void BuildFixedCostCache(int shift, CostCache* c) {
     c->d_cost[i] = (ZopfliCost)base << shift;
   }
   SetMinMatchCost(c);
-}
-
-static size_t zopfli_min(size_t a, size_t b) {
-  return a < b ? a : b;
 }
 
 /*
@@ -352,11 +348,11 @@ static ZopfliCost GetBestLengths(ZopfliBlockState *s,
           const unsigned char* run =
               &s->lmc->pool[(size_t)s->lmc->run_off[lmcpos] * 3];
           size_t klo;
-          kend = zopfli_min((size_t)cachedlen, inend - i);
+          kend = ZOPFLI_MIN((size_t)cachedlen, inend - i);
           for (klo = 3; klo <= kend; run += 3) {
             size_t runlen = (size_t)run[0] + 3;
             unsigned short rundist = (unsigned short)(run[1] + 256 * run[2]);
-            size_t khi = runlen > kend ? kend : runlen;
+            size_t khi = ZOPFLI_MIN(runlen, kend);
             if (klo <= khi) {
               ZopfliCost dcost = cache->d_cost[ZopfliGetDistSymbol(rundist)];
               UpdateCostForRange(costs, length_array, dist_array, j, klo, khi,
@@ -379,7 +375,7 @@ static ZopfliCost GetBestLengths(ZopfliBlockState *s,
 
     /* Lengths. sublen[k] is piecewise-constant, so group equal-distance runs
     and apply each run's cost once. */
-    kend = zopfli_min(leng, inend - i);
+    kend = ZOPFLI_MIN(leng, inend - i);
     k = 3;
     while (k <= kend) {
       unsigned short rundist = sublen[k];

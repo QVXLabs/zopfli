@@ -77,7 +77,7 @@ square-and-compare on that mantissa (its square needs 64 bits). One guard bit is
 computed then rounded.
 */
 static uint32_t IntLog2Fixed(uint32_t x, int frac) {
-  int lz = __builtin_clz(x);              /* x >= 1, so 0 <= lz <= 31. */
+  int lz = ZopfliCLZ32(x);                /* x >= 1, so 0 <= lz <= 31. */
   uint64_t m = (uint64_t)x << lz;         /* Q31 mantissa, [2^31, 2^32). */
   uint32_t fracpart = 0;
   int b;

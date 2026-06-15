@@ -109,6 +109,38 @@ if(MSVC)
   target_compile_definitions(zopflipng PRIVATE _CRT_SECURE_NO_WARNINGS)
 endif()
 
+#
+# Warnings as errors (always on; first-party code only, vendored LodePNG is
+# exempted). MSVC uses /WX; GCC/Clang use -Werror plus the same warning set as
+# the Makefile so the policy matches across build systems.
+#
+if(MSVC)
+  foreach(zopfli_target libzopfli libzopflipng zopfli zopflipng)
+    target_compile_options(${zopfli_target} PRIVATE /WX)
+  endforeach()
+  # Keep LodePNG's warnings non-fatal.
+  set_source_files_properties(
+    src/zopflipng/lodepng/lodepng.cpp
+    src/zopflipng/lodepng/lodepng_util.cpp
+    PROPERTIES COMPILE_OPTIONS "/WX-"
+  )
+else()
+  set(zopfli_c_warn -Wall -Wextra -pedantic -Werror)
+  set(zopfli_cxx_warn -Wall -Wextra -pedantic -Werror)
+  foreach(zopfli_target libzopfli libzopflipng zopfli zopflipng)
+    target_compile_options(${zopfli_target} PRIVATE
+      $<$<COMPILE_LANGUAGE:C>:${zopfli_c_warn}>
+      $<$<COMPILE_LANGUAGE:CXX>:${zopfli_cxx_warn}>
+    )
+  endforeach()
+  # Silence vendored LodePNG entirely (third-party; we don't lint it).
+  set_source_files_properties(
+    src/zopflipng/lodepng/lodepng.cpp
+    src/zopflipng/lodepng/lodepng_util.cpp
+    PROPERTIES COMPILE_OPTIONS "-w"
+  )
+endif()
+
 # Create aliases
 #
 # Makes targets available to projects using Zopfli as a subproject using the
