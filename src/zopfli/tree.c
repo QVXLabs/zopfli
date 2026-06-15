@@ -52,7 +52,7 @@ void ZopfliLengthsToSymbols(const unsigned* lengths, size_t n, unsigned maxbits,
   code = 0;
   bl_count[0] = 0;
   for (bits = 1; bits <= maxbits; bits++) {
-    code = (code + bl_count[bits-1]) << 1;
+    code = (unsigned)((code + bl_count[bits-1]) << 1);
     next_code[bits] = code;
   }
   /* 3) Assign numerical values to all codes, using consecutive values for all
@@ -60,7 +60,7 @@ void ZopfliLengthsToSymbols(const unsigned* lengths, size_t n, unsigned maxbits,
   for (i = 0;  i < n; i++) {
     unsigned len = lengths[i];
     if (len != 0) {
-      symbols[i] = next_code[len];
+      symbols[i] = (unsigned)next_code[len];
       next_code[len]++;
     }
   }
@@ -96,7 +96,7 @@ void ZopfliCalculateEntropy(const size_t* count, size_t n,
   unsigned i;
   uint32_t log2sum;
   for (i = 0; i < n; ++i) {
-    sum += count[i];
+    sum += (uint32_t)count[i];
   }
   log2sum = IntLog2Fixed(sum == 0 ? (uint32_t)n : sum, frac);
   for (i = 0; i < n; ++i) {
@@ -113,7 +113,7 @@ void ZopfliCalculateBitLengthsScratch(ZopfliKatajainenScratch* scratch,
                                       const size_t* count, size_t n, int maxbits,
                                       unsigned* bitlengths) {
   int error = ZopfliLengthLimitedCodeLengthsScratch(
-      scratch, count, n, maxbits, bitlengths);
+      scratch, count, (int)n, maxbits, bitlengths);
   (void) error;
   assert(!error);
 }

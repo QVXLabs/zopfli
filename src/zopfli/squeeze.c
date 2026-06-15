@@ -222,7 +222,7 @@ static void UpdateCostForRange(ZopfliCost* costs, unsigned short* length_array,
     if (newCost < costs[j + k]) {
       assert(k <= ZOPFLI_MAX_MATCH);
       costs[j + k] = newCost;
-      length_array[j + k] = k;
+      length_array[j + k] = (unsigned short)k;
       dist_array[j + k] = dist;
     }
   }
