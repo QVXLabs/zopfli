@@ -138,13 +138,21 @@ typedef struct CostCache {
 
 int ZopfliGetCostShift(size_t blocksize) {
   /* A single position costs at most ~32 bits, so a whole block costs less than
-  32 * blocksize bits. Pick the largest shift keeping the scaled total below
-  2^29, which leaves headroom below the 2^30 sentinel and the type maximum.
-  Smaller blocks get more fractional bits. */
+  32 * blocksize bits. Pick the largest shift keeping the scaled total <= 2^29,
+  which leaves headroom below the 2^30 sentinel and the type maximum. Smaller
+  blocks get more fractional bits. The floor is 0 (not 3): big blocks simply get
+  fewer fractional bits rather than overflowing. This covers blocksize up to
+  2^24; in normal use blocks are far smaller (bounded by the master block size,
+  ZOPFLI_MASTER_BLOCK_SIZE), so the floor is never reached. */
   int shift = 16;
-  while (shift > 3 && (size_t)32 * blocksize > ((size_t)1 << (29 - shift))) {
+  /* 64-bit so the bound is computed identically on 32- and 64-bit platforms
+  (size_t is 32-bit on ILP32, where 32 * blocksize could otherwise wrap). */
+  while (shift > 0 && (uint64_t)32 * blocksize > ((uint64_t)1 << (29 - shift))) {
     shift--;
   }
+  /* Beyond 2^24 even shift 0 cannot hold the bound; the int cost DP would
+  overflow. Only reachable with master blocks disabled and one huge block. */
+  assert(((uint64_t)32 * blocksize << shift) <= ((uint64_t)1 << 29));
   return shift;
 }
 

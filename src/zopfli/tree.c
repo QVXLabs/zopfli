@@ -81,6 +81,9 @@ static uint32_t IntLog2Fixed(uint32_t x, int frac) {
   uint64_t m = (uint64_t)x << lz;         /* Q31 mantissa, [2^31, 2^32). */
   uint32_t fracpart = 0;
   int b;
+  /* frac <= 16 keeps fracpart's bits and the final << frac within range;
+  guaranteed by the caller (the cost shift is 0..16). */
+  assert(frac >= 0 && frac <= 16);
   for (b = 0; b <= frac; b++) {  /* frac + 1 bits (one guard bit). */
     m = (m * m) >> 31;          /* square, keep Q31; now in [2^31, 2^33). */
     fracpart <<= 1;

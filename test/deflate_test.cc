@@ -44,4 +44,23 @@ TEST(Deflate, BlockSizeAutoTypePicksSmallest) {
   ZopfliCleanLZ77Store(&store);
 }
 
+TEST(Deflate, UseExpensiveFixedHeuristic) {
+  // Small blocks always qualify regardless of cost.
+  EXPECT_TRUE(ZopfliUseExpensiveFixed(500, 1000000u, 1u));
+
+  // Large block, fixed within 1.1x of dynamic -> worthwhile.
+  EXPECT_TRUE(ZopfliUseExpensiveFixed(2000, 100u, 100u));
+  // Large block, fixed far above 1.1x of dynamic -> not worthwhile.
+  EXPECT_FALSE(ZopfliUseExpensiveFixed(2000, 1000u, 100u));
+
+  // Overflow regression: both costs are within the < 2^31 bit invariant, but
+  // fixedcost*10 and dyncost*11 exceed UINT32_MAX. Fixed (~4.29e9) is far above
+  // 1.1x dynamic (1.1e9), so the correct answer is false. With 32-bit
+  // arithmetic fixedcost*10 wraps to 4 (<= dyncost*11), which would flip the
+  // result to true.
+  const uint32_t fixedcost = 429496730u;  // *10 = UINT32_MAX + 4, wraps to 4
+  const uint32_t dyncost = 100000000u;    // *11 = 1.1e9, no wrap
+  EXPECT_FALSE(ZopfliUseExpensiveFixed(2000, fixedcost, dyncost));
+}
+
 }  // namespace

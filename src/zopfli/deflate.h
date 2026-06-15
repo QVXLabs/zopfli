@@ -103,6 +103,15 @@ uint32_t ZopfliCalculateBlockSizeAutoTypeScratch(
     ZopfliKatajainenScratch* scratch,
     const ZopfliLZ77Store* lz77, size_t lstart, size_t lend);
 
+/*
+Heuristic used by the auto-type block writer: whether to run the expensive
+optimal-fixed-tree exploration for a block, given its symbol count and the
+fixed/dynamic costs in bits. The cost comparison is done in 64-bit to avoid
+overflow. Exposed for testing.
+*/
+int ZopfliUseExpensiveFixed(size_t blocksize, uint32_t fixedcost,
+                            uint32_t dyncost);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif
