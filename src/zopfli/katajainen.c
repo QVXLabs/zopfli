@@ -203,12 +203,12 @@ void ZopfliCleanKatajainenScratch(ZopfliKatajainenScratch* scratch) {
   free(scratch->lists);
 }
 
-/* Grows *buf to hold at least 'need' Nodes, reusing it across calls. */
 static Node* EnsureNodes(void** buf, size_t* cap, size_t need) {
   if (need > *cap) {
-    free(*buf);
-    *buf = malloc(need * sizeof(Node));
-    *cap = *buf ? need : 0;
+    void* p = realloc(*buf, need * sizeof(Node));
+    if (!p) exit(EXIT_FAILURE);
+    *buf = p;
+    *cap = need;
   }
   return (Node*)*buf;
 }
