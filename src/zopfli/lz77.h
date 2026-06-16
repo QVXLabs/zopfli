@@ -68,7 +68,7 @@ This is currently a bit under-used (with mainly only the longest match cache),
 but is kept for easy future expansion.
 */
 typedef struct ZopfliBlockState {
-  const ZopfliOptions* options;
+  const ZopfliContext* ctx;
 
 #ifdef ZOPFLI_LONGEST_MATCH_CACHE
   /* Cache for length/distance pairs found so far. */
@@ -83,17 +83,31 @@ typedef struct ZopfliBlockState {
   block-size evaluations don't malloc/free per call. Per block state, so
   thread-safe. */
   ZopfliKatajainenScratch katascratch;
+
+  /* Optimal-parse working buffers for the squeeze pass. Allocated once per
+  ZopfliLZ77Optimal[Fixed] call and reused across its iterations; carried here
+  so the DP helpers reach them via the block state instead of long parameter
+  lists. costs/length_array/dist_array are sized to the block (blocksize + 1);
+  path is the traced result, grown on demand. */
+  ZopfliCost* costs;
+  uint16_t* length_array;
+  uint16_t* dist_array;
+  uint16_t* path;
+  size_t pathsize;
+  size_t pathcap;
 } ZopfliBlockState;
 
 void ZopfliInitLZ77Store(const uint8_t* data, ZopfliLZ77Store* store);
-void ZopfliCleanLZ77Store(ZopfliLZ77Store* store);
+void ZopfliCleanLZ77Store(const ZopfliContext* ctx, ZopfliLZ77Store* store);
 /* Empties the store (size 0) but keeps its allocation, so it can be refilled
 without reallocating. */
 void ZopfliResetLZ77Store(ZopfliLZ77Store* store);
-void ZopfliCopyLZ77Store(const ZopfliLZ77Store* source, ZopfliLZ77Store* dest);
-void ZopfliStoreLitLenDist(uint16_t length, uint16_t dist,
-                           size_t pos, ZopfliLZ77Store* store);
-void ZopfliAppendLZ77Store(const ZopfliLZ77Store* store,
+void ZopfliCopyLZ77Store(const ZopfliContext* ctx,
+                         const ZopfliLZ77Store* source, ZopfliLZ77Store* dest);
+void ZopfliStoreLitLenDist(const ZopfliContext* ctx, uint16_t length,
+                           uint16_t dist, size_t pos, ZopfliLZ77Store* store);
+void ZopfliAppendLZ77Store(const ZopfliContext* ctx,
+                           const ZopfliLZ77Store* store,
                            ZopfliLZ77Store* target);
 /* Gets the amount of raw bytes that this range of LZ77 symbols spans. */
 size_t ZopfliLZ77GetByteRange(const ZopfliLZ77Store* lz77,
@@ -105,7 +119,7 @@ void ZopfliLZ77GetHistogram(const ZopfliLZ77Store* lz77,
                             size_t lstart, size_t lend,
                             size_t* ll_counts, size_t* d_counts);
 
-void ZopfliInitBlockState(const ZopfliOptions* options,
+void ZopfliInitBlockState(const ZopfliContext* ctx,
                           size_t blockstart, size_t blockend, int add_lmc,
                           ZopfliBlockState* s);
 void ZopfliCleanBlockState(ZopfliBlockState* s);

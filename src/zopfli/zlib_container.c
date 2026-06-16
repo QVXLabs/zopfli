@@ -23,6 +23,7 @@ Author: afalls@qvxlabs.com (Ardavon Falls)
 
 #include <stdio.h>
 
+#include "context.h"
 #include "deflate.h"
 
 
@@ -58,23 +59,25 @@ void ZopfliZlibCompress(const ZopfliOptions* options,
   unsigned fdict = 0;
   unsigned cmfflg = 256 * cmf + fdict * 32 + flevel * 64;
   unsigned fcheck = 31 - cmfflg % 31;
+  ZopfliContext ctx;
   ZopfliBuf buf;
   cmfflg += fcheck;
 
+  ctx.options = options;
   buf.data = *out;
   buf.size = *outsize;
   buf.cap = *outsize;
 
-  ZopfliBufPush(&buf, (uint8_t)((cmfflg >> 8) & 0xff));
-  ZopfliBufPush(&buf, (uint8_t)(cmfflg & 0xff));
+  ZopfliBufPush(&ctx, &buf, (uint8_t)((cmfflg >> 8) & 0xff));
+  ZopfliBufPush(&ctx, &buf, (uint8_t)(cmfflg & 0xff));
 
   ZopfliDeflateBuf(options, 2 /* dynamic block */, 1 /* final */,
                    in, insize, &bitpointer, &buf);
 
-  ZopfliBufPush(&buf, (uint8_t)((checksum >> 24) & 0xff));
-  ZopfliBufPush(&buf, (uint8_t)((checksum >> 16) & 0xff));
-  ZopfliBufPush(&buf, (uint8_t)((checksum >> 8) & 0xff));
-  ZopfliBufPush(&buf, (uint8_t)(checksum & 0xff));
+  ZopfliBufPush(&ctx, &buf, (uint8_t)((checksum >> 24) & 0xff));
+  ZopfliBufPush(&ctx, &buf, (uint8_t)((checksum >> 16) & 0xff));
+  ZopfliBufPush(&ctx, &buf, (uint8_t)((checksum >> 8) & 0xff));
+  ZopfliBufPush(&ctx, &buf, (uint8_t)(checksum & 0xff));
 
   *out = buf.data;
   *outsize = buf.size;

@@ -30,24 +30,27 @@ Author: jyrki.alakuijala@gmail.com (Jyrki Alakuijala)
 <= HASH_MASK (32767), so 0xFFFF can never collide with a valid entry. */
 #define ZOPFLI_HASH_EMPTY ((uint16_t)-1)
 
-void ZopfliAllocHash(size_t window_size, ZopfliHash* h) {
+void ZopfliAllocHash(const ZopfliContext* ctx, size_t window_size,
+                     ZopfliHash* h) {
   /* head/head2 are indexed by the masked hash value, so only HASH_MASK + 1
   buckets are ever used (not 65536). */
-  h->head = (uint16_t*)ZopfliRealloc(NULL, sizeof(*h->head) * (HASH_MASK + 1));
-  h->prev = (uint16_t*)ZopfliRealloc(NULL, sizeof(*h->prev) * window_size);
+  h->head =
+      (uint16_t*)ZopfliRealloc(ctx, NULL, sizeof(*h->head) * (HASH_MASK + 1));
+  h->prev = (uint16_t*)ZopfliRealloc(ctx, NULL, sizeof(*h->prev) * window_size);
   h->hashval =
-      (uint16_t*)ZopfliRealloc(NULL, sizeof(*h->hashval) * window_size);
+      (uint16_t*)ZopfliRealloc(ctx, NULL, sizeof(*h->hashval) * window_size);
 
 #ifdef ZOPFLI_HASH_SAME
-  h->same = (uint16_t*)ZopfliRealloc(NULL, sizeof(*h->same) * window_size);
+  h->same = (uint16_t*)ZopfliRealloc(ctx, NULL, sizeof(*h->same) * window_size);
 #endif
 
 #ifdef ZOPFLI_HASH_SAME_HASH
   h->head2 =
-      (uint16_t*)ZopfliRealloc(NULL, sizeof(*h->head2) * (HASH_MASK + 1));
-  h->prev2 = (uint16_t*)ZopfliRealloc(NULL, sizeof(*h->prev2) * window_size);
+      (uint16_t*)ZopfliRealloc(ctx, NULL, sizeof(*h->head2) * (HASH_MASK + 1));
+  h->prev2 =
+      (uint16_t*)ZopfliRealloc(ctx, NULL, sizeof(*h->prev2) * window_size);
   h->hashval2 =
-      (uint16_t*)ZopfliRealloc(NULL, sizeof(*h->hashval2) * window_size);
+      (uint16_t*)ZopfliRealloc(ctx, NULL, sizeof(*h->hashval2) * window_size);
 #endif
 }
 
@@ -82,19 +85,19 @@ void ZopfliResetHash(size_t window_size, ZopfliHash* h) {
 #endif
 }
 
-void ZopfliCleanHash(ZopfliHash* h) {
-  ZopfliRealloc(h->head, 0);
-  ZopfliRealloc(h->prev, 0);
-  ZopfliRealloc(h->hashval, 0);
+void ZopfliCleanHash(const ZopfliContext* ctx, ZopfliHash* h) {
+  ZopfliRealloc(ctx, h->head, 0);
+  ZopfliRealloc(ctx, h->prev, 0);
+  ZopfliRealloc(ctx, h->hashval, 0);
 
 #ifdef ZOPFLI_HASH_SAME_HASH
-  ZopfliRealloc(h->head2, 0);
-  ZopfliRealloc(h->prev2, 0);
-  ZopfliRealloc(h->hashval2, 0);
+  ZopfliRealloc(ctx, h->head2, 0);
+  ZopfliRealloc(ctx, h->prev2, 0);
+  ZopfliRealloc(ctx, h->hashval2, 0);
 #endif
 
 #ifdef ZOPFLI_HASH_SAME
-  ZopfliRealloc(h->same, 0);
+  ZopfliRealloc(ctx, h->same, 0);
 #endif
 }
 

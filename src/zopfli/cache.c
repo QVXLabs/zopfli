@@ -29,16 +29,19 @@ Author: afalls@qvxlabs.com (Ardavon Falls)
 /* run_off sentinel: this position has no full sublen stored (pool overflow). */
 #define LMC_NO_SUBLEN ((unsigned)-1)
 
-void ZopfliInitCache(size_t blocksize, ZopfliLongestMatchCache* lmc) {
+void ZopfliInitCache(const ZopfliContext* ctx, size_t blocksize,
+                     ZopfliLongestMatchCache* lmc) {
   size_t i;
-  lmc->length = (uint16_t*)ZopfliRealloc(NULL, sizeof(uint16_t) * blocksize);
-  lmc->dist = (uint16_t*)ZopfliRealloc(NULL, sizeof(uint16_t) * blocksize);
-  lmc->run_off = (unsigned*)ZopfliRealloc(NULL, sizeof(unsigned) * blocksize);
+  lmc->length =
+      (uint16_t*)ZopfliRealloc(ctx, NULL, sizeof(uint16_t) * blocksize);
+  lmc->dist = (uint16_t*)ZopfliRealloc(ctx, NULL, sizeof(uint16_t) * blocksize);
+  lmc->run_off =
+      (unsigned*)ZopfliRealloc(ctx, NULL, sizeof(unsigned) * blocksize);
   /* Same byte budget as the old fixed cache, used now as a shared run pool. */
   lmc->pool_cap = (size_t)ZOPFLI_CACHE_LENGTH * blocksize;
   lmc->pool_used = 0;
   lmc->all_complete = 1;
-  lmc->pool = (uint8_t*)ZopfliRealloc(NULL, 3 * lmc->pool_cap);
+  lmc->pool = (uint8_t*)ZopfliRealloc(ctx, NULL, 3 * lmc->pool_cap);
   /* For an empty block (blocksize 0) the arrays above are zero-size and stay
   NULL; nothing below reads them. Real allocation failures abort inside
   ZopfliRealloc, so no out-of-memory check is needed here. */
@@ -52,11 +55,11 @@ void ZopfliInitCache(size_t blocksize, ZopfliLongestMatchCache* lmc) {
   for (i = 0; i < blocksize; i++) lmc->dist[i] = 0;
 }
 
-void ZopfliCleanCache(ZopfliLongestMatchCache* lmc) {
-  ZopfliRealloc(lmc->length, 0);
-  ZopfliRealloc(lmc->dist, 0);
-  ZopfliRealloc(lmc->pool, 0);
-  ZopfliRealloc(lmc->run_off, 0);
+void ZopfliCleanCache(const ZopfliContext* ctx, ZopfliLongestMatchCache* lmc) {
+  ZopfliRealloc(ctx, lmc->length, 0);
+  ZopfliRealloc(ctx, lmc->dist, 0);
+  ZopfliRealloc(ctx, lmc->pool, 0);
+  ZopfliRealloc(ctx, lmc->run_off, 0);
 }
 
 void ZopfliSublenToCache(const uint16_t* sublen,

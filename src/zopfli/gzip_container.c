@@ -23,10 +23,11 @@ Author: afalls@qvxlabs.com (Ardavon Falls)
 
 #include <stdio.h>
 
+#include "context.h"
 #include "deflate.h"
 
 /* CRC polynomial: 0xedb88320 */
-static const unsigned long crc32_table[256] = {
+static const uint32_t crc32_table[256] = {
            0u, 1996959894u, 3993919788u, 2567524794u,  124634137u, 1886057615u,
   3915621685u, 2657392035u,  249268274u, 2044508324u, 3772115230u, 2547177864u,
    162941995u, 2125561021u, 3887607047u, 2428444049u,  498536548u, 1789927666u,
@@ -73,8 +74,8 @@ static const unsigned long crc32_table[256] = {
 };
 
 /* Returns the CRC32 */
-static unsigned long CRC(const uint8_t* data, size_t size) {
-  unsigned long result = 0xffffffffu;
+static uint32_t CRC(const uint8_t* data, size_t size) {
+  uint32_t result = 0xffffffffu;
   for (; size > 0; size--) {
     result = crc32_table[(result ^ *(data++)) & 0xff] ^ (result >> 8);
   }
@@ -85,41 +86,43 @@ static unsigned long CRC(const uint8_t* data, size_t size) {
 void ZopfliGzipCompress(const ZopfliOptions* options,
                         const uint8_t* in, size_t insize,
                         uint8_t** out, size_t* outsize) {
-  unsigned long crcvalue = CRC(in, insize);
+  uint32_t crcvalue = CRC(in, insize);
   uint8_t bp = 0;
+  ZopfliContext ctx;
   ZopfliBuf buf;
 
+  ctx.options = options;
   buf.data = *out;
   buf.size = *outsize;
   buf.cap = *outsize;
 
-  ZopfliBufPush(&buf, 31);  /* ID1 */
-  ZopfliBufPush(&buf, 139);  /* ID2 */
-  ZopfliBufPush(&buf, 8);  /* CM */
-  ZopfliBufPush(&buf, 0);  /* FLG */
+  ZopfliBufPush(&ctx, &buf, 31);  /* ID1 */
+  ZopfliBufPush(&ctx, &buf, 139);  /* ID2 */
+  ZopfliBufPush(&ctx, &buf, 8);  /* CM */
+  ZopfliBufPush(&ctx, &buf, 0);  /* FLG */
   /* MTIME */
-  ZopfliBufPush(&buf, 0);
-  ZopfliBufPush(&buf, 0);
-  ZopfliBufPush(&buf, 0);
-  ZopfliBufPush(&buf, 0);
+  ZopfliBufPush(&ctx, &buf, 0);
+  ZopfliBufPush(&ctx, &buf, 0);
+  ZopfliBufPush(&ctx, &buf, 0);
+  ZopfliBufPush(&ctx, &buf, 0);
 
-  ZopfliBufPush(&buf, 2);  /* XFL, 2 indicates best compression. */
-  ZopfliBufPush(&buf, 3);  /* OS follows Unix conventions. */
+  ZopfliBufPush(&ctx, &buf, 2);  /* XFL, 2 indicates best compression. */
+  ZopfliBufPush(&ctx, &buf, 3);  /* OS follows Unix conventions. */
 
   ZopfliDeflateBuf(options, 2 /* Dynamic block */, 1,
                    in, insize, &bp, &buf);
 
   /* CRC */
-  ZopfliBufPush(&buf, (uint8_t)(crcvalue & 0xff));
-  ZopfliBufPush(&buf, (uint8_t)((crcvalue >> 8) & 0xff));
-  ZopfliBufPush(&buf, (uint8_t)((crcvalue >> 16) & 0xff));
-  ZopfliBufPush(&buf, (uint8_t)((crcvalue >> 24) & 0xff));
+  ZopfliBufPush(&ctx, &buf, (uint8_t)(crcvalue & 0xff));
+  ZopfliBufPush(&ctx, &buf, (uint8_t)((crcvalue >> 8) & 0xff));
+  ZopfliBufPush(&ctx, &buf, (uint8_t)((crcvalue >> 16) & 0xff));
+  ZopfliBufPush(&ctx, &buf, (uint8_t)((crcvalue >> 24) & 0xff));
 
   /* ISIZE */
-  ZopfliBufPush(&buf, (uint8_t)(insize & 0xff));
-  ZopfliBufPush(&buf, (uint8_t)((insize >> 8) & 0xff));
-  ZopfliBufPush(&buf, (uint8_t)((insize >> 16) & 0xff));
-  ZopfliBufPush(&buf, (uint8_t)((insize >> 24) & 0xff));
+  ZopfliBufPush(&ctx, &buf, (uint8_t)(insize & 0xff));
+  ZopfliBufPush(&ctx, &buf, (uint8_t)((insize >> 8) & 0xff));
+  ZopfliBufPush(&ctx, &buf, (uint8_t)((insize >> 16) & 0xff));
+  ZopfliBufPush(&ctx, &buf, (uint8_t)((insize >> 24) & 0xff));
 
   *out = buf.data;
   *outsize = buf.size;

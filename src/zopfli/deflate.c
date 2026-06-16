@@ -26,6 +26,7 @@ Author: afalls@qvxlabs.com (Ardavon Falls)
 #include <stdlib.h>
 
 #include "blocksplitter.h"
+#include "context.h"
 #include "squeeze.h"
 #include "symbols.h"
 #include "tree.h"
@@ -37,19 +38,20 @@ Given the value of bp and the amount of bytes, the amount of bits represented
 is not simply bytesize * 8 + bp because even representing one bit requires a
 whole byte. It is: (bp == 0) ? (bytesize * 8) : ((bytesize - 1) * 8 + bp)
 */
-static void AddBit(int bit, uint8_t* bp, ZopfliBuf* buf) {
-  if (*bp == 0) ZopfliBufPush(buf, 0);
+static void AddBit(const ZopfliContext* ctx, int bit,
+                   uint8_t* bp, ZopfliBuf* buf) {
+  if (*bp == 0) ZopfliBufPush(ctx, buf, 0);
   buf->data[buf->size - 1] |= bit << *bp;
   *bp = (*bp + 1) & 7;
 }
 
-static void AddBits(unsigned symbol, unsigned length,
+static void AddBits(const ZopfliContext* ctx, unsigned symbol, unsigned length,
                     uint8_t* bp, ZopfliBuf* buf) {
   /* TODO(lode): make more efficient (add more bits at once). */
   unsigned i;
   for (i = 0; i < length; i++) {
     unsigned bit = (symbol >> i) & 1;
-    if (*bp == 0) ZopfliBufPush(buf, 0);
+    if (*bp == 0) ZopfliBufPush(ctx, buf, 0);
     buf->data[buf->size - 1] |= bit << *bp;
     *bp = (*bp + 1) & 7;
   }
@@ -59,13 +61,14 @@ static void AddBits(unsigned symbol, unsigned length,
 Adds bits, like AddBits, but the order is inverted. The deflate specification
 uses both orders in one standard.
 */
-static void AddHuffmanBits(unsigned symbol, unsigned length,
+static void AddHuffmanBits(const ZopfliContext* ctx,
+                           unsigned symbol, unsigned length,
                            uint8_t* bp, ZopfliBuf* buf) {
   /* TODO(lode): make more efficient (add more bits at once). */
   unsigned i;
   for (i = 0; i < length; i++) {
     unsigned bit = (symbol >> (length - i - 1)) & 1;
-    if (*bp == 0) ZopfliBufPush(buf, 0);
+    if (*bp == 0) ZopfliBufPush(ctx, buf, 0);
     buf->data[buf->size - 1] |= bit << *bp;
     *bp = (*bp + 1) & 7;
   }
@@ -102,15 +105,16 @@ static void PatchDistanceCodesForBuggyDecoders(unsigned* d_lengths) {
 Encodes the Huffman tree and returns how many bits its encoding takes. If out
 is a null pointer, only returns the size and runs faster.
 */
-static size_t EncodeTree(ZopfliKatajainenScratch* scratch,
+static size_t EncodeTree(const ZopfliContext* ctx,
+                         ZopfliKatajainenScratch* scratch,
                          const unsigned* ll_lengths,
                          const unsigned* d_lengths,
                          int use_16, int use_17, int use_18,
                          uint8_t* bp, ZopfliBuf* buf) {
   unsigned lld_total;  /* Total amount of literal, length, distance codes. */
   /* Runlength encoded version of lengths of litlen and dist trees. */
-  unsigned* rle = 0;
-  unsigned* rle_bits = 0;  /* Extra bits for rle values 16, 17 and 18. */
+  unsigned* rle = NULL;
+  unsigned* rle_bits = NULL;  /* Extra bits for rle values 16, 17 and 18. */
   size_t rle_size = 0;  /* Size of rle array. */
   size_t rle_bits_size = 0;  /* Should have same value as rle_size. */
   unsigned hlit = 29;  /* 286 - 257 */
@@ -155,8 +159,8 @@ static size_t EncodeTree(ZopfliKatajainenScratch* scratch,
         while (count >= 11) {
           unsigned count2 = ZOPFLI_MIN(count, 138u);
           if (!size_only) {
-            ZOPFLI_APPEND_DATA(18, &rle, &rle_size);
-            ZOPFLI_APPEND_DATA(count2 - 11, &rle_bits, &rle_bits_size);
+            ZOPFLI_APPEND_DATA(ctx, 18, &rle, &rle_size);
+            ZOPFLI_APPEND_DATA(ctx, count2 - 11, &rle_bits, &rle_bits_size);
           }
           clcounts[18]++;
           count -= count2;
@@ -166,8 +170,8 @@ static size_t EncodeTree(ZopfliKatajainenScratch* scratch,
         while (count >= 3) {
           unsigned count2 = ZOPFLI_MIN(count, 10u);
           if (!size_only) {
-            ZOPFLI_APPEND_DATA(17, &rle, &rle_size);
-            ZOPFLI_APPEND_DATA(count2 - 3, &rle_bits, &rle_bits_size);
+            ZOPFLI_APPEND_DATA(ctx, 17, &rle, &rle_size);
+            ZOPFLI_APPEND_DATA(ctx, count2 - 3, &rle_bits, &rle_bits_size);
           }
           clcounts[17]++;
           count -= count2;
@@ -180,14 +184,14 @@ static size_t EncodeTree(ZopfliKatajainenScratch* scratch,
       count--;  /* Since the first one is hardcoded. */
       clcounts[symbol]++;
       if (!size_only) {
-        ZOPFLI_APPEND_DATA(symbol, &rle, &rle_size);
-        ZOPFLI_APPEND_DATA(0, &rle_bits, &rle_bits_size);
+        ZOPFLI_APPEND_DATA(ctx, symbol, &rle, &rle_size);
+        ZOPFLI_APPEND_DATA(ctx, 0, &rle_bits, &rle_bits_size);
       }
       while (count >= 3) {
         unsigned count2 = ZOPFLI_MIN(count, 6u);
         if (!size_only) {
-          ZOPFLI_APPEND_DATA(16, &rle, &rle_size);
-          ZOPFLI_APPEND_DATA(count2 - 3, &rle_bits, &rle_bits_size);
+          ZOPFLI_APPEND_DATA(ctx, 16, &rle, &rle_size);
+          ZOPFLI_APPEND_DATA(ctx, count2 - 3, &rle_bits, &rle_bits_size);
         }
         clcounts[16]++;
         count -= count2;
@@ -198,36 +202,36 @@ static size_t EncodeTree(ZopfliKatajainenScratch* scratch,
     clcounts[symbol] += count;
     while (count > 0) {
       if (!size_only) {
-        ZOPFLI_APPEND_DATA(symbol, &rle, &rle_size);
-        ZOPFLI_APPEND_DATA(0, &rle_bits, &rle_bits_size);
+        ZOPFLI_APPEND_DATA(ctx, symbol, &rle, &rle_size);
+        ZOPFLI_APPEND_DATA(ctx, 0, &rle_bits, &rle_bits_size);
       }
       count--;
     }
   }
 
-  ZopfliCalculateBitLengthsScratch(scratch, clcounts, 19, 7, clcl);
-  if (!size_only) ZopfliLengthsToSymbols(clcl, 19, 7, clsymbols);
+  ZopfliCalculateBitLengthsScratch(ctx, scratch, clcounts, 19, 7, clcl);
+  if (!size_only) ZopfliLengthsToSymbols(ctx, clcl, 19, 7, clsymbols);
 
   hclen = 15;
   /* Trim zeros. */
   while (hclen > 0 && clcounts[order[hclen + 4 - 1]] == 0) hclen--;
 
   if (!size_only) {
-    AddBits(hlit, 5, bp, buf);
-    AddBits(hdist, 5, bp, buf);
-    AddBits(hclen, 4, bp, buf);
+    AddBits(ctx, hlit, 5, bp, buf);
+    AddBits(ctx, hdist, 5, bp, buf);
+    AddBits(ctx, hclen, 4, bp, buf);
 
     for (i = 0; i < hclen + 4; i++) {
-      AddBits(clcl[order[i]], 3, bp, buf);
+      AddBits(ctx, clcl[order[i]], 3, bp, buf);
     }
 
     for (i = 0; i < rle_size; i++) {
       unsigned symbol = clsymbols[rle[i]];
-      AddHuffmanBits(symbol, clcl[rle[i]], bp, buf);
+      AddHuffmanBits(ctx, symbol, clcl[rle[i]], bp, buf);
       /* Extra bits. */
-      if (rle[i] == 16) AddBits(rle_bits[i], 2, bp, buf);
-      else if (rle[i] == 17) AddBits(rle_bits[i], 3, bp, buf);
-      else if (rle[i] == 18) AddBits(rle_bits[i], 7, bp, buf);
+      if (rle[i] == 16) AddBits(ctx, rle_bits[i], 2, bp, buf);
+      else if (rle[i] == 17) AddBits(ctx, rle_bits[i], 3, bp, buf);
+      else if (rle[i] == 18) AddBits(ctx, rle_bits[i], 7, bp, buf);
     }
   }
 
@@ -242,13 +246,14 @@ static size_t EncodeTree(ZopfliKatajainenScratch* scratch,
   result_size += clcounts[18] * 7;
 
   /* Note: in case of "size_only" these are null pointers so no effect. */
-  ZopfliRealloc(rle, 0);
-  ZopfliRealloc(rle_bits, 0);
+  ZopfliRealloc(ctx, rle, 0);
+  ZopfliRealloc(ctx, rle_bits, 0);
 
   return result_size;
 }
 
-static void AddDynamicTree(ZopfliKatajainenScratch* scratch,
+static void AddDynamicTree(const ZopfliContext* ctx,
+                           ZopfliKatajainenScratch* scratch,
                            const unsigned* ll_lengths,
                            const unsigned* d_lengths,
                            uint8_t* bp, ZopfliBuf* buf) {
@@ -257,16 +262,16 @@ static void AddDynamicTree(ZopfliKatajainenScratch* scratch,
   size_t bestsize = 0;
 
   for(i = 0; i < 8; i++) {
-    size_t size = EncodeTree(scratch, ll_lengths, d_lengths,
+    size_t size = EncodeTree(ctx, scratch, ll_lengths, d_lengths,
                              i & 1, i & 2, i & 4,
-                             0, 0);
+                             0, NULL);
     if (bestsize == 0 || size < bestsize) {
       bestsize = size;
       best = i;
     }
   }
 
-  EncodeTree(scratch, ll_lengths, d_lengths,
+  EncodeTree(ctx, scratch, ll_lengths, d_lengths,
              best & 1, best & 2, best & 4,
              bp, buf);
 }
@@ -274,16 +279,17 @@ static void AddDynamicTree(ZopfliKatajainenScratch* scratch,
 /*
 Gives the exact size of the tree, in bits, as it will be encoded in DEFLATE.
 */
-static size_t CalculateTreeSize(ZopfliKatajainenScratch* scratch,
+static size_t CalculateTreeSize(const ZopfliContext* ctx,
+                                ZopfliKatajainenScratch* scratch,
                                 const unsigned* ll_lengths,
                                 const unsigned* d_lengths) {
   size_t result = 0;
   int i;
 
   for(i = 0; i < 8; i++) {
-    size_t size = EncodeTree(scratch, ll_lengths, d_lengths,
+    size_t size = EncodeTree(ctx, scratch, ll_lengths, d_lengths,
                              i & 1, i & 2, i & 4,
-                             0, 0);
+                             0, NULL);
     if (result == 0 || size < result) result = size;
   }
 
@@ -295,7 +301,8 @@ Adds all lit/len and dist codes from the lists as huffman symbols. Does not add
 end code 256. expected_data_size is the uncompressed block size, used for
 assert, but you can set it to 0 to not do the assertion.
 */
-static void AddLZ77Data(const ZopfliLZ77Store* lz77,
+static void AddLZ77Data(const ZopfliContext* ctx,
+                        const ZopfliLZ77Store* lz77,
                         size_t lstart, size_t lend,
                         size_t expected_data_size,
                         const unsigned* ll_symbols, const unsigned* ll_lengths,
@@ -310,7 +317,7 @@ static void AddLZ77Data(const ZopfliLZ77Store* lz77,
     if (dist == 0) {
       assert(litlen < 256);
       assert(ll_lengths[litlen] > 0);
-      AddHuffmanBits(ll_symbols[litlen], ll_lengths[litlen], bp, buf);
+      AddHuffmanBits(ctx, ll_symbols[litlen], ll_lengths[litlen], bp, buf);
       testlength++;
     } else {
       unsigned lls = ZopfliGetLengthSymbol(litlen);
@@ -318,12 +325,12 @@ static void AddLZ77Data(const ZopfliLZ77Store* lz77,
       assert(litlen >= 3 && litlen <= 288);
       assert(ll_lengths[lls] > 0);
       assert(d_lengths[ds] > 0);
-      AddHuffmanBits(ll_symbols[lls], ll_lengths[lls], bp, buf);
-      AddBits(ZopfliGetLengthExtraBitsValue(litlen),
+      AddHuffmanBits(ctx, ll_symbols[lls], ll_lengths[lls], bp, buf);
+      AddBits(ctx, ZopfliGetLengthExtraBitsValue(litlen),
               ZopfliGetLengthExtraBits(litlen),
               bp, buf);
-      AddHuffmanBits(d_symbols[ds], d_lengths[ds], bp, buf);
-      AddBits(ZopfliGetDistExtraBitsValue(dist),
+      AddHuffmanBits(ctx, d_symbols[ds], d_lengths[ds], bp, buf);
+      AddBits(ctx, ZopfliGetDistExtraBitsValue(dist),
               ZopfliGetDistExtraBits(dist),
               bp, buf);
       testlength += litlen;
@@ -427,7 +434,8 @@ Changes the population counts in a way that the consequent Huffman tree
 compression, especially its rle-part, will be more likely to compress this data
 more efficiently. length contains the size of the histogram.
 */
-void OptimizeHuffmanForRle(int length, size_t* counts) {
+void OptimizeHuffmanForRle(const ZopfliContext* ctx, int length,
+                           size_t* counts) {
   int i, k, stride;
   size_t symbol, sum, limit;
   int* good_for_rle;
@@ -445,7 +453,7 @@ void OptimizeHuffmanForRle(int length, size_t* counts) {
   }
   /* 2) Let's mark all population counts that already can be encoded
   with an rle code.*/
-  good_for_rle = (int*)ZopfliRealloc(NULL, (unsigned)length * sizeof(int));
+  good_for_rle = (int*)ZopfliRealloc(ctx, NULL, (unsigned)length * sizeof(int));
   for (i = 0; i < length; ++i) good_for_rle[i] = 0;
 
   /* Let's not spoil any of the existing good rle codes.
@@ -510,7 +518,7 @@ void OptimizeHuffmanForRle(int length, size_t* counts) {
     }
   }
 
-  ZopfliRealloc(good_for_rle, 0);
+  ZopfliRealloc(ctx, good_for_rle, 0);
 }
 
 /*
@@ -519,7 +527,7 @@ uses it, otherwise keeps the original. Returns size of encoded tree and data in
 bits, not including the 3-bit block header.
 */
 static uint32_t TryOptimizeHuffmanForRle(
-    ZopfliKatajainenScratch* scratch,
+    const ZopfliContext* ctx, ZopfliKatajainenScratch* scratch,
     const ZopfliLZ77Store* lz77, size_t lstart, size_t lend,
     const size_t* ll_counts, const size_t* d_counts,
     unsigned* ll_lengths, unsigned* d_lengths) {
@@ -532,21 +540,22 @@ static uint32_t TryOptimizeHuffmanForRle(
   uint32_t treesize2;
   uint32_t datasize2;
 
-  treesize = (uint32_t)CalculateTreeSize(scratch, ll_lengths, d_lengths);
+  treesize = (uint32_t)CalculateTreeSize(ctx, scratch, ll_lengths, d_lengths);
   datasize = (uint32_t)CalculateBlockSymbolSizeGivenCounts(ll_counts, d_counts,
       ll_lengths, d_lengths, lz77, lstart, lend);
 
   memcpy(ll_counts2, ll_counts, sizeof(ll_counts2));
   memcpy(d_counts2, d_counts, sizeof(d_counts2));
-  OptimizeHuffmanForRle(ZOPFLI_NUM_LL, ll_counts2);
-  OptimizeHuffmanForRle(ZOPFLI_NUM_D, d_counts2);
-  ZopfliCalculateBitLengthsScratch(scratch, ll_counts2, ZOPFLI_NUM_LL, 15,
+  OptimizeHuffmanForRle(ctx, ZOPFLI_NUM_LL, ll_counts2);
+  OptimizeHuffmanForRle(ctx, ZOPFLI_NUM_D, d_counts2);
+  ZopfliCalculateBitLengthsScratch(ctx, scratch, ll_counts2, ZOPFLI_NUM_LL, 15,
                                    ll_lengths2);
-  ZopfliCalculateBitLengthsScratch(scratch, d_counts2, ZOPFLI_NUM_D, 15,
+  ZopfliCalculateBitLengthsScratch(ctx, scratch, d_counts2, ZOPFLI_NUM_D, 15,
                                    d_lengths2);
   PatchDistanceCodesForBuggyDecoders(d_lengths2);
 
-  treesize2 = (uint32_t)CalculateTreeSize(scratch, ll_lengths2, d_lengths2);
+  treesize2 = (uint32_t)CalculateTreeSize(ctx, scratch, ll_lengths2,
+                                          d_lengths2);
   datasize2 = (uint32_t)CalculateBlockSymbolSizeGivenCounts(ll_counts, d_counts,
       ll_lengths2, d_lengths2, lz77, lstart, lend);
 
@@ -565,7 +574,8 @@ symbols to have smallest output size. This are not necessarily the ideal Huffman
 bit lengths. Returns size of encoded tree and data in bits, not including the
 3-bit block header.
 */
-static uint32_t GetDynamicLengths(ZopfliKatajainenScratch* scratch,
+static uint32_t GetDynamicLengths(const ZopfliContext* ctx,
+                                ZopfliKatajainenScratch* scratch,
                                 const ZopfliLZ77Store* lz77,
                                 size_t lstart, size_t lend,
                                 unsigned* ll_lengths, unsigned* d_lengths) {
@@ -574,16 +584,17 @@ static uint32_t GetDynamicLengths(ZopfliKatajainenScratch* scratch,
 
   ZopfliLZ77GetHistogram(lz77, lstart, lend, ll_counts, d_counts);
   ll_counts[256] = 1;  /* End symbol. */
-  ZopfliCalculateBitLengthsScratch(scratch, ll_counts, ZOPFLI_NUM_LL, 15,
+  ZopfliCalculateBitLengthsScratch(ctx, scratch, ll_counts, ZOPFLI_NUM_LL, 15,
                                    ll_lengths);
-  ZopfliCalculateBitLengthsScratch(scratch, d_counts, ZOPFLI_NUM_D, 15,
+  ZopfliCalculateBitLengthsScratch(ctx, scratch, d_counts, ZOPFLI_NUM_D, 15,
                                    d_lengths);
   PatchDistanceCodesForBuggyDecoders(d_lengths);
-  return TryOptimizeHuffmanForRle(
-      scratch, lz77, lstart, lend, ll_counts, d_counts, ll_lengths, d_lengths);
+  return TryOptimizeHuffmanForRle(ctx, scratch, lz77, lstart, lend, ll_counts,
+                                  d_counts, ll_lengths, d_lengths);
 }
 
-uint32_t ZopfliCalculateBlockSizeScratch(ZopfliKatajainenScratch* scratch,
+uint32_t ZopfliCalculateBlockSizeScratch(const ZopfliContext* ctx,
+                                       ZopfliKatajainenScratch* scratch,
                                        const ZopfliLZ77Store* lz77,
                                        size_t lstart, size_t lend, int btype) {
   unsigned ll_lengths[ZOPFLI_NUM_LL];
@@ -604,7 +615,7 @@ uint32_t ZopfliCalculateBlockSizeScratch(ZopfliKatajainenScratch* scratch,
     result += (uint32_t)CalculateBlockSymbolSize(
         ll_lengths, d_lengths, lz77, lstart, lend);
   } else {
-    result += GetDynamicLengths(scratch, lz77, lstart, lend,
+    result += GetDynamicLengths(ctx, scratch, lz77, lstart, lend,
                                 ll_lengths, d_lengths);
   }
 
@@ -616,22 +627,23 @@ uint32_t ZopfliCalculateBlockSize(const ZopfliLZ77Store* lz77,
   ZopfliKatajainenScratch scratch;
   uint32_t result;
   ZopfliInitKatajainenScratch(&scratch);
-  result = ZopfliCalculateBlockSizeScratch(&scratch, lz77, lstart, lend, btype);
-  ZopfliCleanKatajainenScratch(&scratch);
+  result =
+      ZopfliCalculateBlockSizeScratch(NULL, &scratch, lz77, lstart, lend, btype);
+  ZopfliCleanKatajainenScratch(NULL, &scratch);
   return result;
 }
 
 uint32_t ZopfliCalculateBlockSizeAutoTypeScratch(
-    ZopfliKatajainenScratch* scratch,
+    const ZopfliContext* ctx, ZopfliKatajainenScratch* scratch,
     const ZopfliLZ77Store* lz77, size_t lstart, size_t lend) {
   uint32_t uncompressedcost =
-      ZopfliCalculateBlockSizeScratch(scratch, lz77, lstart, lend, 0);
+      ZopfliCalculateBlockSizeScratch(ctx, scratch, lz77, lstart, lend, 0);
   /* Don't do the expensive fixed cost calculation for larger blocks that are
      unlikely to use it. */
   uint32_t fixedcost = (lz77->size > 1000) ? uncompressedcost :
-      ZopfliCalculateBlockSizeScratch(scratch, lz77, lstart, lend, 1);
+      ZopfliCalculateBlockSizeScratch(ctx, scratch, lz77, lstart, lend, 1);
   uint32_t dyncost =
-      ZopfliCalculateBlockSizeScratch(scratch, lz77, lstart, lend, 2);
+      ZopfliCalculateBlockSizeScratch(ctx, scratch, lz77, lstart, lend, 2);
   return (uncompressedcost < fixedcost && uncompressedcost < dyncost)
       ? uncompressedcost
       : (fixedcost < dyncost ? fixedcost : dyncost);
@@ -642,19 +654,19 @@ uint32_t ZopfliCalculateBlockSizeAutoType(const ZopfliLZ77Store* lz77,
   ZopfliKatajainenScratch scratch;
   uint32_t result;
   ZopfliInitKatajainenScratch(&scratch);
-  result = ZopfliCalculateBlockSizeAutoTypeScratch(&scratch, lz77, lstart, lend);
-  ZopfliCleanKatajainenScratch(&scratch);
+  result = ZopfliCalculateBlockSizeAutoTypeScratch(NULL, &scratch, lz77, lstart,
+                                                   lend);
+  ZopfliCleanKatajainenScratch(NULL, &scratch);
   return result;
 }
 
 /* Since an uncompressed block can be max 65535 in size, it actually adds
 multible blocks if needed. */
-static void AddNonCompressedBlock(const ZopfliOptions* options, int final,
+static void AddNonCompressedBlock(const ZopfliContext* ctx, int final,
                                   const uint8_t* in, size_t instart,
                                   size_t inend,
                                   uint8_t* bp, ZopfliBuf* buf) {
   size_t pos = instart;
-  (void)options;
   for (;;) {
     size_t i;
     uint16_t blocksize = 65535;
@@ -666,21 +678,21 @@ static void AddNonCompressedBlock(const ZopfliOptions* options, int final,
 
     nlen = ~blocksize;
 
-    AddBit(final && currentfinal, bp, buf);
+    AddBit(ctx, final && currentfinal, bp, buf);
     /* BTYPE 00 */
-    AddBit(0, bp, buf);
-    AddBit(0, bp, buf);
+    AddBit(ctx, 0, bp, buf);
+    AddBit(ctx, 0, bp, buf);
 
     /* Any bits of input up to the next byte boundary are ignored. */
     *bp = 0;
 
-    ZopfliBufPush(buf, (uint8_t)(blocksize & 0xff));
-    ZopfliBufPush(buf, (uint8_t)((blocksize >> 8) & 0xff));
-    ZopfliBufPush(buf, (uint8_t)(nlen & 0xff));
-    ZopfliBufPush(buf, (uint8_t)((nlen >> 8) & 0xff));
+    ZopfliBufPush(ctx, buf, (uint8_t)(blocksize & 0xff));
+    ZopfliBufPush(ctx, buf, (uint8_t)((blocksize >> 8) & 0xff));
+    ZopfliBufPush(ctx, buf, (uint8_t)(nlen & 0xff));
+    ZopfliBufPush(ctx, buf, (uint8_t)((nlen >> 8) & 0xff));
 
     for (i = 0; i < blocksize; i++) {
-      ZopfliBufPush(buf, in[pos + i]);
+      ZopfliBufPush(ctx, buf, in[pos + i]);
     }
 
     if (currentfinal) break;
@@ -705,8 +717,9 @@ bp: output bit pointer
 out: dynamic output array to append to
 outsize: dynamic output array size
 */
-static void AddLZ77Block(ZopfliKatajainenScratch* scratch,
-                         const ZopfliOptions* options, int btype, int final,
+static void AddLZ77Block(const ZopfliContext* ctx,
+                         ZopfliKatajainenScratch* scratch,
+                         int btype, int final,
                          const ZopfliLZ77Store* lz77,
                          size_t lstart, size_t lend,
                          size_t expected_data_size,
@@ -723,14 +736,14 @@ static void AddLZ77Block(ZopfliKatajainenScratch* scratch,
     size_t length = ZopfliLZ77GetByteRange(lz77, lstart, lend);
     size_t pos = lstart == lend ? 0 : lz77->pos[lstart];
     size_t end = pos + length;
-    AddNonCompressedBlock(options, final,
+    AddNonCompressedBlock(ctx, final,
                           lz77->data, pos, end, bp, buf);
     return;
   }
 
-  AddBit(final, bp, buf);
-  AddBit(btype & 1, bp, buf);
-  AddBit((btype & 2) >> 1, bp, buf);
+  AddBit(ctx, final, bp, buf);
+  AddBit(ctx, btype & 1, bp, buf);
+  AddBit(ctx, (btype & 2) >> 1, bp, buf);
 
   if (btype == 1) {
     /* Fixed block. */
@@ -740,47 +753,47 @@ static void AddLZ77Block(ZopfliKatajainenScratch* scratch,
     size_t detect_tree_size;
     assert(btype == 2);
 
-    GetDynamicLengths(scratch, lz77, lstart, lend, ll_lengths, d_lengths);
+    GetDynamicLengths(ctx, scratch, lz77, lstart, lend, ll_lengths, d_lengths);
 
     detect_tree_size = buf->size;
-    AddDynamicTree(scratch, ll_lengths, d_lengths, bp, buf);
-    if (options->verbose) {
+    AddDynamicTree(ctx, scratch, ll_lengths, d_lengths, bp, buf);
+    if (ctx->options->verbose) {
       fprintf(stderr, "treesize: %zu\n", buf->size - detect_tree_size);
     }
   }
 
-  ZopfliLengthsToSymbols(ll_lengths, ZOPFLI_NUM_LL, 15, ll_symbols);
-  ZopfliLengthsToSymbols(d_lengths, ZOPFLI_NUM_D, 15, d_symbols);
+  ZopfliLengthsToSymbols(ctx, ll_lengths, ZOPFLI_NUM_LL, 15, ll_symbols);
+  ZopfliLengthsToSymbols(ctx, d_lengths, ZOPFLI_NUM_D, 15, d_symbols);
 
   detect_block_size = buf->size;
-  AddLZ77Data(lz77, lstart, lend, expected_data_size,
+  AddLZ77Data(ctx, lz77, lstart, lend, expected_data_size,
               ll_symbols, ll_lengths, d_symbols, d_lengths,
               bp, buf);
   /* End symbol. */
-  AddHuffmanBits(ll_symbols[256], ll_lengths[256], bp, buf);
+  AddHuffmanBits(ctx, ll_symbols[256], ll_lengths[256], bp, buf);
 
   for (i = lstart; i < lend; i++) {
     uncompressed_size += lz77->dists[i] == 0 ? 1 : lz77->litlens[i];
   }
   compressed_size = buf->size - detect_block_size;
-  if (options->verbose) {
+  if (ctx->options->verbose) {
     fprintf(stderr, "compressed block size: %zu (%zuk) (unc: %zu)\n",
            compressed_size, compressed_size / 1024, uncompressed_size);
   }
 }
 
-static void AddLZ77BlockAutoType(ZopfliKatajainenScratch* scratch,
-                                 const ZopfliOptions* options, int final,
+static void AddLZ77BlockAutoType(const ZopfliContext* ctx,
+                                 ZopfliKatajainenScratch* scratch, int final,
                                  const ZopfliLZ77Store* lz77,
                                  size_t lstart, size_t lend,
                                  size_t expected_data_size,
                                  uint8_t* bp, ZopfliBuf* buf) {
   uint32_t uncompressedcost =
-      ZopfliCalculateBlockSizeScratch(scratch, lz77, lstart, lend, 0);
+      ZopfliCalculateBlockSizeScratch(ctx, scratch, lz77, lstart, lend, 0);
   uint32_t fixedcost =
-      ZopfliCalculateBlockSizeScratch(scratch, lz77, lstart, lend, 1);
+      ZopfliCalculateBlockSizeScratch(ctx, scratch, lz77, lstart, lend, 1);
   uint32_t dyncost =
-      ZopfliCalculateBlockSizeScratch(scratch, lz77, lstart, lend, 2);
+      ZopfliCalculateBlockSizeScratch(ctx, scratch, lz77, lstart, lend, 2);
 
   /* Whether to perform the expensive calculation of creating an optimal block
   with fixed huffman tree to check if it is smaller. */
@@ -790,9 +803,9 @@ static void AddLZ77BlockAutoType(ZopfliKatajainenScratch* scratch,
   ZopfliLZ77Store fixedstore;
   if (lstart == lend) {
     /* Smallest empty block is represented by fixed block */
-    AddBits(final, 1, bp, buf);
-    AddBits(1, 2, bp, buf);  /* btype 01 */
-    AddBits(0, 7, bp, buf);  /* end symbol has code 0000000 */
+    AddBits(ctx, final, 1, bp, buf);
+    AddBits(ctx, 1, 2, bp, buf);  /* btype 01 */
+    AddBits(ctx, 0, 7, bp, buf);  /* end symbol has code 0000000 */
     return;
   }
   ZopfliInitLZ77Store(lz77->data, &fixedstore);
@@ -802,30 +815,30 @@ static void AddLZ77BlockAutoType(ZopfliKatajainenScratch* scratch,
     size_t inend = instart + ZopfliLZ77GetByteRange(lz77, lstart, lend);
 
     ZopfliBlockState s;
-    ZopfliInitBlockState(options, instart, inend, 1, &s);
+    ZopfliInitBlockState(ctx, instart, inend, 1, &s);
     ZopfliLZ77OptimalFixed(&s, lz77->data, instart, inend, &fixedstore);
-    fixedcost = ZopfliCalculateBlockSizeScratch(scratch, &fixedstore, 0,
+    fixedcost = ZopfliCalculateBlockSizeScratch(ctx, scratch, &fixedstore, 0,
                                                 fixedstore.size, 1);
     ZopfliCleanBlockState(&s);
   }
 
   if (uncompressedcost < fixedcost && uncompressedcost < dyncost) {
-    AddLZ77Block(scratch, options, 0, final, lz77, lstart, lend,
+    AddLZ77Block(ctx, scratch, 0, final, lz77, lstart, lend,
                  expected_data_size, bp, buf);
   } else if (fixedcost < dyncost) {
     if (expensivefixed) {
-      AddLZ77Block(scratch, options, 1, final, &fixedstore, 0, fixedstore.size,
+      AddLZ77Block(ctx, scratch, 1, final, &fixedstore, 0, fixedstore.size,
                    expected_data_size, bp, buf);
     } else {
-      AddLZ77Block(scratch, options, 1, final, lz77, lstart, lend,
+      AddLZ77Block(ctx, scratch, 1, final, lz77, lstart, lend,
                    expected_data_size, bp, buf);
     }
   } else {
-    AddLZ77Block(scratch, options, 2, final, lz77, lstart, lend,
+    AddLZ77Block(ctx, scratch, 2, final, lz77, lstart, lend,
                  expected_data_size, bp, buf);
   }
 
-  ZopfliCleanLZ77Store(&fixedstore);
+  ZopfliCleanLZ77Store(ctx, &fixedstore);
 }
 
 /*
@@ -837,14 +850,15 @@ previous bytes are used as the initial dictionary for LZ77.
 This function will usually output multiple deflate blocks. If final is 1, then
 the final bit will be set on the last block.
 */
-static void DeflatePart(const ZopfliOptions* options, int btype, int final,
+static void DeflatePart(const ZopfliContext* ctx, int btype, int final,
                         const uint8_t* in, size_t instart, size_t inend,
                         uint8_t* bp, ZopfliBuf* buf) {
+  const ZopfliOptions* options = ctx->options;
   size_t i;
   /* byte coordinates rather than lz77 index */
-  size_t* splitpoints_uncompressed = 0;
+  size_t* splitpoints_uncompressed = NULL;
   size_t npoints = 0;
-  size_t* splitpoints = 0;
+  size_t* splitpoints = NULL;
   uint32_t totalcost = 0;
   ZopfliLZ77Store lz77;
   /* Reused across this part's block-size evaluations and final encoding. */
@@ -854,20 +868,20 @@ static void DeflatePart(const ZopfliOptions* options, int btype, int final,
   given, then however it forces that one. Neither of the lesser types needs
   block splitting as they have no dynamic huffman trees. */
   if (btype == 0) {
-    AddNonCompressedBlock(options, final, in, instart, inend, bp, buf);
+    AddNonCompressedBlock(ctx, final, in, instart, inend, bp, buf);
     return;
   } else if (btype == 1) {
     ZopfliLZ77Store store;
     ZopfliBlockState s;
     ZopfliInitLZ77Store(in, &store);
-    ZopfliInitBlockState(options, instart, inend, 1, &s);
+    ZopfliInitBlockState(ctx, instart, inend, 1, &s);
 
     ZopfliLZ77OptimalFixed(&s, in, instart, inend, &store);
-    AddLZ77Block(&s.katascratch, options, btype, final, &store, 0, store.size, 0,
+    AddLZ77Block(ctx, &s.katascratch, btype, final, &store, 0, store.size, 0,
                  bp, buf);
 
     ZopfliCleanBlockState(&s);
-    ZopfliCleanLZ77Store(&store);
+    ZopfliCleanLZ77Store(ctx, &store);
     return;
   }
 
@@ -877,7 +891,8 @@ static void DeflatePart(const ZopfliOptions* options, int btype, int final,
     ZopfliBlockSplit(options, in, instart, inend,
                      options->blocksplittingmax,
                      &splitpoints_uncompressed, &npoints);
-    splitpoints = (size_t*)ZopfliRealloc(NULL, sizeof(*splitpoints) * npoints);
+    splitpoints =
+        (size_t*)ZopfliRealloc(ctx, NULL, sizeof(*splitpoints) * npoints);
   }
 
   ZopfliInitLZ77Store(in, &lz77);
@@ -888,21 +903,21 @@ static void DeflatePart(const ZopfliOptions* options, int btype, int final,
     ZopfliBlockState s;
     ZopfliLZ77Store store;
     ZopfliInitLZ77Store(in, &store);
-    ZopfliInitBlockState(options, start, end, 1, &s);
+    ZopfliInitBlockState(ctx, start, end, 1, &s);
     ZopfliLZ77Optimal(&s, in, start, end, options->numiterations, &store);
-    totalcost += ZopfliCalculateBlockSizeAutoTypeScratch(&katascratch, &store,
-                                                         0, store.size);
+    totalcost += ZopfliCalculateBlockSizeAutoTypeScratch(ctx, &katascratch,
+                                                         &store, 0, store.size);
 
-    ZopfliAppendLZ77Store(&store, &lz77);
+    ZopfliAppendLZ77Store(ctx, &store, &lz77);
     if (i < npoints) splitpoints[i] = lz77.size;
 
     ZopfliCleanBlockState(&s);
-    ZopfliCleanLZ77Store(&store);
+    ZopfliCleanLZ77Store(ctx, &store);
   }
 
   /* Second block splitting attempt */
   if (options->blocksplitting && npoints > 1) {
-    size_t* splitpoints2 = 0;
+    size_t* splitpoints2 = NULL;
     size_t npoints2 = 0;
     uint32_t totalcost2 = 0;
 
@@ -912,31 +927,31 @@ static void DeflatePart(const ZopfliOptions* options, int btype, int final,
     for (i = 0; i <= npoints2; i++) {
       size_t start = i == 0 ? 0 : splitpoints2[i - 1];
       size_t end = i == npoints2 ? lz77.size : splitpoints2[i];
-      totalcost2 += ZopfliCalculateBlockSizeAutoTypeScratch(&katascratch, &lz77,
-                                                            start, end);
+      totalcost2 += ZopfliCalculateBlockSizeAutoTypeScratch(ctx, &katascratch,
+                                                            &lz77, start, end);
     }
 
     if (totalcost2 < totalcost) {
-      ZopfliRealloc(splitpoints, 0);
+      ZopfliRealloc(ctx, splitpoints, 0);
       splitpoints = splitpoints2;
       npoints = npoints2;
     } else {
-      ZopfliRealloc(splitpoints2, 0);
+      ZopfliRealloc(ctx, splitpoints2, 0);
     }
   }
 
   for (i = 0; i <= npoints; i++) {
     size_t start = i == 0 ? 0 : splitpoints[i - 1];
     size_t end = i == npoints ? lz77.size : splitpoints[i];
-    AddLZ77BlockAutoType(&katascratch, options, i == npoints && final,
+    AddLZ77BlockAutoType(ctx, &katascratch, i == npoints && final,
                          &lz77, start, end, 0,
                          bp, buf);
   }
 
-  ZopfliCleanKatajainenScratch(&katascratch);
-  ZopfliCleanLZ77Store(&lz77);
-  ZopfliRealloc(splitpoints, 0);
-  ZopfliRealloc(splitpoints_uncompressed, 0);
+  ZopfliCleanKatajainenScratch(ctx, &katascratch);
+  ZopfliCleanLZ77Store(ctx, &lz77);
+  ZopfliRealloc(ctx, splitpoints, 0);
+  ZopfliRealloc(ctx, splitpoints_uncompressed, 0);
 }
 
 /* Adopts (out, outsize) into a ZopfliBuf, runs f, then publishes back. The
@@ -946,11 +961,13 @@ void ZopfliDeflatePart(const ZopfliOptions* options, int btype, int final,
                        const uint8_t* in, size_t instart, size_t inend,
                        uint8_t* bp, uint8_t** out,
                        size_t* outsize) {
+  ZopfliContext ctx;
   ZopfliBuf buf;
+  ctx.options = options;
   buf.data = *out;
   buf.size = *outsize;
   buf.cap = *outsize;
-  DeflatePart(options, btype, final, in, instart, inend, bp, &buf);
+  DeflatePart(&ctx, btype, final, in, instart, inend, bp, &buf);
   *out = buf.data;
   *outsize = buf.size;
 }
@@ -974,6 +991,8 @@ void ZopfliDeflateBuf(const ZopfliOptions* options, int btype, int final,
                       uint8_t* bp, ZopfliBuf* buf) {
   size_t offset = buf->size;
   ZopfliOptions opts = *options;
+  ZopfliContext ctx;
+  ctx.options = &opts;
   assert(opts.numiterations >= 0);
   if (opts.numiterations == 0) opts.numiterations = AutoIterations(insize);
   if (opts.verbose && options->numiterations == 0) {
@@ -994,7 +1013,7 @@ void ZopfliDeflateBuf(const ZopfliOptions* options, int btype, int final,
     int masterfinal = (i + mbs >= insize);
     int final2 = final && masterfinal;
     size_t size = masterfinal ? insize - i : mbs;
-    DeflatePart(&opts, btype, final2, in, i, i + size, bp, buf);
+    DeflatePart(&ctx, btype, final2, in, i, i + size, bp, buf);
     i += size;
   } while (i < insize);
   }

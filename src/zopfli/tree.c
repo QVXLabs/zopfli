@@ -28,12 +28,12 @@ Author: afalls@qvxlabs.com (Ardavon Falls)
 #include "katajainen.h"
 #include "util.h"
 
-void ZopfliLengthsToSymbols(const unsigned* lengths, size_t n, unsigned maxbits,
-                            unsigned* symbols) {
+void ZopfliLengthsToSymbols(const ZopfliContext* ctx, const unsigned* lengths,
+                            size_t n, unsigned maxbits, unsigned* symbols) {
   size_t* bl_count =
-      (size_t*)ZopfliRealloc(NULL, sizeof(size_t) * (maxbits + 1));
+      (size_t*)ZopfliRealloc(ctx, NULL, sizeof(size_t) * (maxbits + 1));
   size_t* next_code =
-      (size_t*)ZopfliRealloc(NULL, sizeof(size_t) * (maxbits + 1));
+      (size_t*)ZopfliRealloc(ctx, NULL, sizeof(size_t) * (maxbits + 1));
   unsigned bits, i;
   unsigned code;
 
@@ -67,8 +67,8 @@ void ZopfliLengthsToSymbols(const unsigned* lengths, size_t n, unsigned maxbits,
     }
   }
 
-  ZopfliRealloc(bl_count, 0);
-  ZopfliRealloc(next_code, 0);
+  ZopfliRealloc(ctx, bl_count, 0);
+  ZopfliRealloc(ctx, next_code, 0);
 }
 
 /*
@@ -114,19 +114,21 @@ void ZopfliCalculateEntropy(const size_t* count, size_t n,
   }
 }
 
-void ZopfliCalculateBitLengthsScratch(ZopfliKatajainenScratch* scratch,
+void ZopfliCalculateBitLengthsScratch(const ZopfliContext* ctx,
+                                      ZopfliKatajainenScratch* scratch,
                                       const size_t* count, size_t n, int maxbits,
                                       unsigned* bitlengths) {
   int error = ZopfliLengthLimitedCodeLengthsScratch(
-      scratch, count, (int)n, maxbits, bitlengths);
+      ctx, scratch, count, (int)n, maxbits, bitlengths);
   (void) error;
   assert(!error);
 }
 
-void ZopfliCalculateBitLengths(const size_t* count, size_t n, int maxbits,
-                               unsigned* bitlengths) {
+void ZopfliCalculateBitLengths(const ZopfliContext* ctx, const size_t* count,
+                               size_t n, int maxbits, unsigned* bitlengths) {
   ZopfliKatajainenScratch scratch;
   ZopfliInitKatajainenScratch(&scratch);
-  ZopfliCalculateBitLengthsScratch(&scratch, count, n, maxbits, bitlengths);
-  ZopfliCleanKatajainenScratch(&scratch);
+  ZopfliCalculateBitLengthsScratch(ctx, &scratch, count, n, maxbits,
+                                   bitlengths);
+  ZopfliCleanKatajainenScratch(ctx, &scratch);
 }

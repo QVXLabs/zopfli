@@ -54,22 +54,24 @@ TEST(FixedPointRange, CostShiftInvariant) {
 void CheckSqueezeCovers(const std::vector<unsigned char>& in, int iters) {
   ZopfliOptions options;
   ZopfliInitOptions(&options);
+  ZopfliContext ctx;
+  ctx.options = &options;
   ZopfliBlockState s;
-  ZopfliInitBlockState(&options, 0, in.size(), 1, &s);
+  ZopfliInitBlockState(&ctx, 0, in.size(), 1, &s);
 
   ZopfliLZ77Store store;
   ZopfliInitLZ77Store(in.data(), &store);
   ZopfliLZ77Optimal(&s, in.data(), 0, in.size(), iters, &store);
   EXPECT_EQ(ZopfliLZ77GetByteRange(&store, 0, store.size), in.size());
   EXPECT_GT(store.size, 0u);
-  ZopfliCleanLZ77Store(&store);
+  ZopfliCleanLZ77Store(NULL, &store);
 
   ZopfliLZ77Store fixed_store;
   ZopfliInitLZ77Store(in.data(), &fixed_store);
   ZopfliLZ77OptimalFixed(&s, in.data(), 0, in.size(), &fixed_store);
   EXPECT_EQ(ZopfliLZ77GetByteRange(&fixed_store, 0, fixed_store.size),
             in.size());
-  ZopfliCleanLZ77Store(&fixed_store);
+  ZopfliCleanLZ77Store(NULL, &fixed_store);
 
   ZopfliCleanBlockState(&s);
 }

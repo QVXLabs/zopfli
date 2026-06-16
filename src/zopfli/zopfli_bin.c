@@ -85,13 +85,13 @@ static int LoadFile(const char* filename,
   }
   *outsize = (size_t)filesize;
 
-  *out = (uint8_t*)ZopfliRealloc(NULL, *outsize ? *outsize : 1);
+  *out = (uint8_t*)ZopfliRealloc(NULL, NULL, *outsize ? *outsize : 1);
 
   if (*outsize) {
     size_t testsize = fread(*out, 1, *outsize, file);
     if (testsize != *outsize) {
       /* It could be a directory */
-      ZopfliRealloc(*out, 0);
+      ZopfliRealloc(NULL, *out, 0);
       *out = 0;
       *outsize = 0;
       fclose(file);
@@ -146,8 +146,8 @@ static void CompressFile(const ZopfliOptions* options,
     fwrite(out, 1, outsize, stdout);
   }
 
-  ZopfliRealloc(out, 0);
-  ZopfliRealloc(in, 0);
+  ZopfliRealloc(NULL, out, 0);
+  ZopfliRealloc(NULL, in, 0);
 }
 
 /*
@@ -155,7 +155,7 @@ Add two strings together. Size does not matter. Result must be freed.
 */
 static char* AddStrings(const char* str1, const char* str2) {
   size_t len = strlen(str1) + strlen(str2);
-  char* result = (char*)ZopfliRealloc(NULL, len + 1);
+  char* result = (char*)ZopfliRealloc(NULL, NULL, len + 1);
   strcpy(result, str1);
   strcat(result, str2);
   return result;
@@ -230,7 +230,7 @@ int main(int argc, char* argv[]) {
         fprintf(stderr, "Saving to: %s\n", outfilename);
       }
       CompressFile(&options, output_type, filename, outfilename);
-      ZopfliRealloc(outfilename, 0);
+      ZopfliRealloc(NULL, outfilename, 0);
     }
   }
 

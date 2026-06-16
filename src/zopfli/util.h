@@ -190,22 +190,24 @@ Precondition: allocated size of data is at least a power of two greater than or
 equal than *size.
 */
 #ifdef __cplusplus /* C++ cannot assign void* from malloc to *data */
-#define ZOPFLI_APPEND_DATA(/* T */ value, /* T** */ data, /* size_t* */ size) {\
+#define ZOPFLI_APPEND_DATA(ctx, /* T */ value, /* T** */ data, \
+                           /* size_t* */ size) {\
   if (!((*size) & ((*size) - 1))) {\
     /*double alloc size if it's a power of two*/\
     void** data_void = reinterpret_cast<void**>(data);\
-    *data_void = (*size) == 0 ? ZopfliRealloc(NULL, sizeof(**data))\
-                  : ZopfliRealloc((*data), (*size) * 2 * sizeof(**data));\
+    *data_void = (*size) == 0 ? ZopfliRealloc(ctx, NULL, sizeof(**data))\
+                  : ZopfliRealloc(ctx, (*data), (*size) * 2 * sizeof(**data));\
   }\
   (*data)[(*size)] = (value);\
   (*size)++;\
 }
 #else /* C gives problems with strict-aliasing rules for (void**) cast */
-#define ZOPFLI_APPEND_DATA(/* T */ value, /* T** */ data, /* size_t* */ size) {\
+#define ZOPFLI_APPEND_DATA(ctx, /* T */ value, /* T** */ data, \
+                           /* size_t* */ size) {\
   if (!((*size) & ((*size) - 1))) {\
     /*double alloc size if it's a power of two*/\
-    (*data) = (*size) == 0 ? ZopfliRealloc(NULL, sizeof(**data))\
-                  : ZopfliRealloc((*data), (*size) * 2 * sizeof(**data));\
+    (*data) = (*size) == 0 ? ZopfliRealloc(ctx, NULL, sizeof(**data))\
+                  : ZopfliRealloc(ctx, (*data), (*size) * 2 * sizeof(**data));\
   }\
   (*data)[(*size)] = (value);\
   (*size)++;\
@@ -259,12 +261,17 @@ ZOPFLI_INLINE int ZopfliCLZ32(uint32_t x) {
 #endif
 }
 
+/* Forward typedef: the body of ZopfliContext lives in context.h. Allocation
+routes through ctx's allocator hook; a NULL ctx uses the standard library. */
+typedef struct ZopfliContext ZopfliContext;
+
 /* Appends one byte, growing by the golden ratio when full. */
-void ZopfliBufPush(ZopfliBuf* b, uint8_t value);
+void ZopfliBufPush(const ZopfliContext* ctx, ZopfliBuf* b, uint8_t value);
 
 /* Single allocation primitive (malloc/realloc/free unified). size == 0 frees ptr
 and returns NULL (portable, unlike raw realloc(ptr, 0)); ptr == NULL allocates.
-Gives one seam for a custom/embedded allocator. */
-void* ZopfliRealloc(void* ptr, size_t size);
+Routes through ctx's custom allocator when set, else the standard library; ctx
+may be NULL. Aborts on genuine allocation failure. */
+void* ZopfliRealloc(const ZopfliContext* ctx, void* ptr, size_t size);
 
 #endif  /* ZOPFLI_UTIL_H_ */

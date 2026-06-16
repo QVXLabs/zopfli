@@ -20,6 +20,7 @@ Author: afalls@qvxlabs.com (Ardavon Falls)
 
 #include "util.h"
 
+#include "context.h"
 #include "zopfli.h"
 
 #include <assert.h>
@@ -35,25 +36,38 @@ static void* ZopfliOutOfMemory(size_t size) {
   return NULL;  /* unreachable (exit is noreturn); satisfies MSVC's checker */
 }
 
-void* ZopfliRealloc(void* ptr, size_t size) {
-  /* size 0 -> portable free (NULL); ptr NULL -> realloc acts as malloc. */
-  void* result = size == 0 ? (free(ptr), NULL) : realloc(ptr, size);
+/* Default allocator: the realloc-style contract every zrealloc hook follows.
+size 0 frees ptr and returns NULL (portable, unlike realloc(ptr, 0)); ptr NULL
+allocates. OOM handling lives in ZopfliRealloc, not here. */
+static void* ZopfliDefaultRealloc(void* alloc_context, void* ptr, size_t size) {
+  (void)alloc_context;
+  return size == 0 ? (free(ptr), NULL) : realloc(ptr, size);
+}
+
+void* ZopfliRealloc(const ZopfliContext* ctx, void* ptr, size_t size) {
+  /* Dispatch to the context's allocator (the default when unset or ctx is
+  NULL), then apply the uniform out-of-memory check. */
+  void* (*ra)(void*, void*, size_t) =
+      ctx && ctx->options->zrealloc ? ctx->options->zrealloc
+                                    : ZopfliDefaultRealloc;
+  void* alloc_context = ctx ? ctx->options->alloc_context : NULL;
+  void* result = ra(alloc_context, ptr, size);
   return size != 0 && !result ? ZopfliOutOfMemory(size) : result;
 }
 
-void ZopfliBufPush(ZopfliBuf* b, uint8_t value) {
+void ZopfliBufPush(const ZopfliContext* ctx, ZopfliBuf* b, uint8_t value) {
   if (b->size == b->cap) {
     b->cap = b->cap ? ZOPFLI_GROW_CAP(b->cap) : 16;
-    b->data = (uint8_t*)ZopfliRealloc(b->data, b->cap);
+    b->data = (uint8_t*)ZopfliRealloc(ctx, b->data, b->cap);
   }
   b->data[b->size++] = value;
 }
 
 void ZopfliInitOptions(ZopfliOptions* options) {
-  options->verbose = 0;
-  options->verbose_more = 0;
-  options->numiterations = 0;  /* 0 = auto (size-dependent). */
+  /* Zero everything (numiterations 0 = auto; alloc_context NULL), then set the
+  non-zero defaults and point zrealloc at the internal default allocator. */
+  memset(options, 0, sizeof(*options));
   options->blocksplitting = 1;
-  options->blocksplittinglast = 0;
   options->blocksplittingmax = 15;
+  options->zrealloc = ZopfliDefaultRealloc;
 }

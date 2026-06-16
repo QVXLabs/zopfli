@@ -180,6 +180,24 @@ bytes and the checksum (gzip uses CRC-32, zlib Adler-32, raw DEFLATE none).
 Choose by what the consumer expects, not for ratio. `verbose` / `-v` only prints
 progress to stderr and has no effect on the output.
 
+### Custom allocator — `zrealloc` / `alloc_context`
+
+By default zopfli allocates with the standard `realloc`/`free`. To route every
+allocation through your own allocator (e.g. an arena, or a fixed pool on an
+embedded target), set `options.zrealloc` to a `realloc`-style callback and,
+optionally, `options.alloc_context` to a pointer handed back to it unchanged:
+
+```c
+void* my_realloc(void* alloc_context, void* ptr, size_t size);
+```
+
+It follows `realloc` semantics with one addition: `size == 0` must free `ptr` and
+return `NULL`; `ptr == NULL` allocates; it returns `NULL` only on genuine failure
+(which zopfli treats as fatal). `ZopfliInitOptions` points `zrealloc` at an
+internal default backed by the standard library; leaving it at that default (or
+setting it back to `NULL`) keeps standard-library allocation. This changes only
+*how* memory is obtained, never the compressed output.
+
 ## Getting started
 
 ### Prerequisites

@@ -67,13 +67,23 @@ typedef struct ZopfliOptions {
   extreme results that hurt compression on some files). Default value: 15.
   */
   int blocksplittingmax;
+
+  /*
+  Custom allocator, realloc-style: size 0 frees ptr and returns NULL; ptr NULL
+  allocates; returns NULL only on real failure. alloc_context is passed back
+  unchanged as the first argument. ZopfliInitOptions sets this to an internal
+  default allocator (plain realloc/free); a NULL zrealloc also falls back to it.
+  All of zopfli's allocations route through this.
+  */
+  void* (*zrealloc)(void* alloc_context, void* ptr, size_t size);
+  void* alloc_context;
 } ZopfliOptions;
 
 /* Initializes options with default values. */
 void ZopfliInitOptions(ZopfliOptions* options);
 
 /*
-Compresses according to the given output format and appends the result to the
+Compresses, according to the given output format, and appends the result to the
 output.
 
 options: global program options

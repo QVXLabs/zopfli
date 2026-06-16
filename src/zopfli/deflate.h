@@ -97,7 +97,8 @@ uint32_t ZopfliCalculateBlockSize(const ZopfliLZ77Store* lz77,
 As ZopfliCalculateBlockSize, but reuses caller-owned scratch (thread-safe when
 each thread passes its own).
 */
-uint32_t ZopfliCalculateBlockSizeScratch(ZopfliKatajainenScratch* scratch,
+uint32_t ZopfliCalculateBlockSizeScratch(const ZopfliContext* ctx,
+                                         ZopfliKatajainenScratch* scratch,
                                          const ZopfliLZ77Store* lz77,
                                          size_t lstart, size_t lend, int btype);
 
@@ -111,7 +112,7 @@ uint32_t ZopfliCalculateBlockSizeAutoType(const ZopfliLZ77Store* lz77,
 As ZopfliCalculateBlockSizeAutoType, but reuses caller-owned scratch.
 */
 uint32_t ZopfliCalculateBlockSizeAutoTypeScratch(
-    ZopfliKatajainenScratch* scratch,
+    const ZopfliContext* ctx, ZopfliKatajainenScratch* scratch,
     const ZopfliLZ77Store* lz77, size_t lstart, size_t lend);
 
 /*

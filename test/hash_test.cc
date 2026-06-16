@@ -8,7 +8,7 @@ TEST(Hash, WarmupAndUpdateOverBuffer) {
   std::vector<unsigned char> data = zopfli_test::Bytes(
       "the quick brown fox the quick brown fox the quick brown fox");
   ZopfliHash h;
-  ZopfliAllocHash(ZOPFLI_WINDOW_SIZE, &h);
+  ZopfliAllocHash(NULL, ZOPFLI_WINDOW_SIZE, &h);
   ZopfliResetHash(ZOPFLI_WINDOW_SIZE, &h);
   ZopfliWarmupHash(data.data(), 0, data.size(), &h);
   for (size_t i = 0; i < data.size(); i++) {
@@ -22,16 +22,16 @@ TEST(Hash, WarmupAndUpdateOverBuffer) {
     if (h.prev[hpos] != hpos) { has_chain = true; break; }
   }
   EXPECT_TRUE(has_chain);
-  ZopfliCleanHash(&h);
+  ZopfliCleanHash(NULL, &h);
 }
 
 TEST(Hash, ResetIsIdempotent) {
   ZopfliHash h;
-  ZopfliAllocHash(ZOPFLI_WINDOW_SIZE, &h);
+  ZopfliAllocHash(NULL, ZOPFLI_WINDOW_SIZE, &h);
   ZopfliResetHash(ZOPFLI_WINDOW_SIZE, &h);
   ZopfliResetHash(ZOPFLI_WINDOW_SIZE, &h);
   EXPECT_EQ(h.val, 0);
-  ZopfliCleanHash(&h);
+  ZopfliCleanHash(NULL, &h);
 }
 
 }  // namespace

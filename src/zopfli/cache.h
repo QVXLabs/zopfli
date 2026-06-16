@@ -50,10 +50,11 @@ typedef struct ZopfliLongestMatchCache {
 } ZopfliLongestMatchCache;
 
 /* Initializes the ZopfliLongestMatchCache. */
-void ZopfliInitCache(size_t blocksize, ZopfliLongestMatchCache* lmc);
+void ZopfliInitCache(const ZopfliContext* ctx, size_t blocksize,
+                     ZopfliLongestMatchCache* lmc);
 
 /* Frees up the memory of the ZopfliLongestMatchCache. */
-void ZopfliCleanCache(ZopfliLongestMatchCache* lmc);
+void ZopfliCleanCache(const ZopfliContext* ctx, ZopfliLongestMatchCache* lmc);
 
 /* Stores sublen array in the cache. */
 void ZopfliSublenToCache(const uint16_t* sublen,
