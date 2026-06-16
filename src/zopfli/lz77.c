@@ -313,45 +313,97 @@ void ZopfliVerifyLenDist(const unsigned char* data, size_t datasize, size_t pos,
 }
 
 /*
-Finds how long the match of scan and match is. Can be used to find how many
-bytes starting from scan, and from match, are equal. Returns the last byte
-after scan, which is still equal to the correspondinb byte after match.
-scan is the position to compare
-match is the earlier position to compare.
-end is the last possible byte, beyond which to stop looking.
-safe_end is a few (8) bytes before end, for comparing multiple bytes at once.
+Selects the GetMatch implementation:
+  - x86 and 64-bit targets: memcmp over 16-byte chunks. memcmp with a constant
+    size inlines to a wide compare (SSE on x86, ldp on aarch64) and needs no
+    alignment.
+  - Other (smaller) targets -- 32/16/8-bit non-x86, e.g. ARMv5/ARMv7, AVR: the
+    aligned word + match-splice path below. There memcmp would emit a per-iter
+    bcmp call and an unaligned word cast could fault.
+ZOPFLI_FORCE_SPLICE=N forces the splice path with an N-byte (4/2/1) native word,
+for verifying it on x86. The splice math is little-endian only.
+*/
+#if defined(ZOPFLI_FORCE_SPLICE)
+# define ZOPFLI_GM_SPLICE 1
+#elif !defined(__i386__) && !defined(__x86_64__) && !defined(_M_IX86) && \
+      !defined(_M_X64) && !defined(ZOPFLI_NATIVE_64BIT) && \
+      defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+# define ZOPFLI_GM_SPLICE 1
+#endif
+
+#if defined(ZOPFLI_GM_SPLICE)
+/* Native word for the splice path. The loop processes two of these per
+iteration (2x the native width: 8/4/2 bytes on 32/16/8-bit targets). */
+# if defined(ZOPFLI_FORCE_SPLICE) && ZOPFLI_FORCE_SPLICE == 4
+typedef uint32_t ZopfliNativeWord;
+# elif defined(ZOPFLI_FORCE_SPLICE) && ZOPFLI_FORCE_SPLICE == 2
+typedef uint16_t ZopfliNativeWord;
+# elif defined(ZOPFLI_FORCE_SPLICE) && ZOPFLI_FORCE_SPLICE == 1
+typedef uint8_t ZopfliNativeWord;
+# elif defined(ZOPFLI_NATIVE_32BIT)
+typedef uint32_t ZopfliNativeWord;
+# elif defined(ZOPFLI_NATIVE_16BIT)
+typedef uint16_t ZopfliNativeWord;
+# else
+typedef uint8_t ZopfliNativeWord;
+# endif
+#endif
+
+/*
+Returns the first position >= scan where scan and match differ, looking no
+further than end; the match length is the returned pointer minus scan. match is
+the earlier copy being compared.
+
+Compares wide chunks, then resolves the mismatching chunk one byte at a time.
+The bounds guard keeps every wide read inside the buffer.
 */
 static const unsigned char* GetMatch(const unsigned char* scan,
                                      const unsigned char* match,
-                                     const unsigned char* end,
-                                     const unsigned char* safe_end) {
+                                     const unsigned char* end) {
+#if defined(ZOPFLI_GM_SPLICE)
+  typedef ZopfliNativeWord W;
+  const uintptr_t ws = sizeof(W);   /* native word */
+  const uintptr_t step = 2 * ws;    /* bytes compared per iteration */
+  uintptr_t off;
 
-  if (sizeof(size_t) == 8) {
-    /* 8 checks at once per array bounds check (size_t is 64-bit). */
-    while (scan < safe_end && *((size_t*)scan) == *((size_t*)match)) {
-      scan += 8;
-      match += 8;
-    }
-  } else if (sizeof(unsigned int) == 4) {
-    /* 4 checks at once per array bounds check (unsigned int is 32-bit). */
-    while (scan < safe_end
-        && *((unsigned int*)scan) == *((unsigned int*)match)) {
-      scan += 4;
-      match += 4;
-    }
-  } else {
-    /* do 8 checks at once per array bounds check. */
-    while (scan < safe_end && *scan == *match && *++scan == *++match
-          && *++scan == *++match && *++scan == *++match
-          && *++scan == *++match && *++scan == *++match
-          && *++scan == *++match && *++scan == *++match) {
-      scan++; match++;
-    }
+  /* Align scan to a native-word boundary, comparing the head byte by byte. */
+  for (; ((uintptr_t)scan & (ws - 1)) != 0; ++scan, ++match) {
+    if (scan == end || *scan != *match) return scan;
   }
 
-  /* The remaining few bytes. */
-  while (scan != end && *scan == *match) {
-    scan++; match++;
+  off = (uintptr_t)match & (ws - 1);
+  if (off == 0) {
+    /* match is aligned too: two aligned word compares per iteration. */
+    for (; (uintptr_t)(end - scan) >= step; scan += step, match += step) {
+      if (*(const W*)scan != *(const W*)match) break;
+      if (*(const W*)(scan + ws) != *(const W*)(match + ws)) break;
+    }
+  } else if ((uintptr_t)(end - scan) >= step + ws) {
+    /* match is misaligned by off: read aligned words from the match side and
+    splice adjacent ones with the constant shift, carrying the high word as the
+    accumulator so each iteration loads only the two new words. */
+    const unsigned char* mp = match - off;
+    const unsigned lo = (unsigned)(off * CHAR_BIT);
+    const unsigned hi = (unsigned)(ws * CHAR_BIT) - lo;
+    W acc = *(const W*)mp;
+    for (; (uintptr_t)(end - scan) >= step + ws;
+         mp += step, scan += step, match += step) {
+      W n1 = *(const W*)(mp + ws);
+      W n2 = *(const W*)(mp + step);
+      if (*(const W*)scan != (W)((acc >> lo) | (n1 << hi))) break;
+      if (*(const W*)(scan + ws) != (W)((n1 >> lo) | (n2 << hi))) break;
+      acc = n2;
+    }
+  }
+#else
+  /* memcmp avoids unaligned word-cast faults; constant size still inlines. */
+  for (; (size_t)(end - scan) >= 16 && memcmp(scan, match, 16) == 0;
+       scan += 16, match += 16) {
+  }
+#endif
+
+  /* The remaining bytes, and any mismatching chunk, one byte at a time. */
+  for (; scan != end && *scan == *match; scan++, match++) {
   }
 
   return scan;
@@ -446,7 +498,6 @@ void ZopfliFindLongestMatch(ZopfliBlockState* s, const ZopfliHash* h,
   const unsigned char* scan;
   const unsigned char* match;
   const unsigned char* arrayend;
-  const unsigned char* arrayend_safe;
 #if ZOPFLI_MAX_CHAIN_HITS < ZOPFLI_WINDOW_SIZE
   int chain_counter = ZOPFLI_MAX_CHAIN_HITS;  /* For quitting early. */
 #endif
@@ -487,7 +538,6 @@ void ZopfliFindLongestMatch(ZopfliBlockState* s, const ZopfliHash* h,
     limit = size - pos;
   }
   arrayend = &array[pos] + limit;
-  arrayend_safe = arrayend - 8;
 
   assert(hval < 65536);
 
@@ -526,7 +576,7 @@ void ZopfliFindLongestMatch(ZopfliBlockState* s, const ZopfliHash* h,
           match += same;
         }
 #endif
-        scan = GetMatch(scan, match, arrayend, arrayend_safe);
+        scan = GetMatch(scan, match, arrayend);
         currentlength = (unsigned short)(scan - &array[pos]);  /* found len. */
       }
 

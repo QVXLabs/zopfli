@@ -26,6 +26,7 @@ basic deflate specification values and generic program options.
 #ifndef ZOPFLI_UTIL_H_
 #define ZOPFLI_UTIL_H_
 
+#include <limits.h>
 #include <stdint.h>
 #include <string.h>
 #include <stdlib.h>
@@ -48,6 +49,17 @@ uses the _BitScanReverse intrinsic (anything else falls back to a loop). */
 #endif
 #if !defined(ZOPFLI_HAS_BUILTIN_CLZ) && defined(_MSC_VER)
 # include <intrin.h>
+#endif
+
+/* Native machine word width, used to size GetMatch's word-at-a-time scan.
+ZOPFLI_NATIVE_64BIT when size_t is 64-bit, ZOPFLI_NATIVE_32BIT when unsigned int
+is 32-bit, ZOPFLI_NATIVE_16BIT when it is 16-bit; smaller targets define none. */
+#if SIZE_MAX == 0xFFFFFFFFFFFFFFFFu
+# define ZOPFLI_NATIVE_64BIT 1
+#elif UINT_MAX == 0xFFFFFFFFu
+# define ZOPFLI_NATIVE_32BIT 1
+#elif UINT_MAX == 0xFFFFu
+# define ZOPFLI_NATIVE_16BIT 1
 #endif
 
 /* Minimum and maximum length that can be encoded in deflate. */
