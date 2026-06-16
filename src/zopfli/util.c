@@ -36,22 +36,29 @@ static void* ZopfliOutOfMemory(size_t size) {
   return NULL;  /* unreachable (exit is noreturn); satisfies MSVC's checker */
 }
 
-/* Default allocator: the realloc-style contract every zrealloc hook follows.
+/* Default allocator: in the realloc-style contract every zrealloc hook follows.
 size 0 frees ptr and returns NULL (portable, unlike realloc(ptr, 0)); ptr NULL
 allocates. OOM handling lives in ZopfliRealloc, not here. */
-static void* ZopfliDefaultRealloc(void* alloc_context, void* ptr, size_t size) {
+void* ZopfliDefaultRealloc(void* alloc_context, void* ptr, size_t size) {
   (void)alloc_context;
   return size == 0 ? (free(ptr), NULL) : realloc(ptr, size);
 }
 
+/* Context backed by the default allocator, for allocations outside any
+caller-supplied options (CLI helpers, option-less size calculators, tests), so
+every allocation can pass a non-NULL context. */
+const ZopfliContext* ZopfliDefaultContext(void) {
+  static const ZopfliContext kDefaultContext = {
+    { 0, 0, 0, 1, 0, 15, ZopfliDefaultRealloc, NULL }
+  };
+  return &kDefaultContext;
+}
+
 void* ZopfliRealloc(const ZopfliContext* ctx, void* ptr, size_t size) {
-  /* Dispatch to the context's allocator (the default when unset or ctx is
-  NULL), then apply the uniform out-of-memory check. */
-  void* (*ra)(void*, void*, size_t) =
-      ctx && ctx->options->zrealloc ? ctx->options->zrealloc
-                                    : ZopfliDefaultRealloc;
-  void* alloc_context = ctx ? ctx->options->alloc_context : NULL;
-  void* result = ra(alloc_context, ptr, size);
+  /* ctx is never NULL; its options always name an allocator hook. */
+  void* result;
+  assert(ctx && ctx->options.zrealloc);
+  result = ctx->options.zrealloc(ctx->options.alloc_context, ptr, size);
   return size != 0 && !result ? ZopfliOutOfMemory(size) : result;
 }
 

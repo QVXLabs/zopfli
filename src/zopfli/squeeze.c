@@ -587,8 +587,8 @@ void ZopfliLZ77Optimal(ZopfliBlockState *s,
     cost = ZopfliCalculateBlockSizeScratch(s->ctx, &s->katascratch,
                                            &currentstore, 0,
                                            currentstore.size, 2);
-    if (s->ctx->options->verbose_more
-        || (s->ctx->options->verbose && cost < bestcost)) {
+    if (s->ctx->options.verbose_more
+        || (s->ctx->options.verbose && cost < bestcost)) {
       fprintf(stderr, "Iteration %d: %d bit\n", i, (int) cost);
     }
     if (cost < bestcost) {

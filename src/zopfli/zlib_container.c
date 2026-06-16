@@ -53,7 +53,7 @@ void ZopfliZlibCompress(const ZopfliOptions* options,
                         const uint8_t* in, size_t insize,
                         uint8_t** out, size_t* outsize) {
   uint8_t bitpointer = 0;
-  unsigned checksum = adler32(in, (unsigned)insize);
+  unsigned checksum = adler32(in, insize);
   unsigned cmf = 120;  /* CM 8, CINFO 7. See zlib spec.*/
   unsigned flevel = 3;
   unsigned fdict = 0;
@@ -63,7 +63,7 @@ void ZopfliZlibCompress(const ZopfliOptions* options,
   ZopfliBuf buf;
   cmfflg += fcheck;
 
-  ctx.options = options;
+  ctx.options = *options;
   buf.data = *out;
   buf.size = *outsize;
   buf.cap = *outsize;

@@ -23,14 +23,14 @@ Author: afalls@qvxlabs.com (Ardavon Falls)
 #include "zopfli.h"  /* ZopfliOptions */
 
 /*
-Internal per-compression context. Carries the options (which hold the custom
-allocator hook) so a single pointer threads configuration and allocation through
-the code instead of many parameters. Built at each public entry point from the
-caller's ZopfliOptions; util.h forward-typedefs it so ZopfliRealloc can take it
-without an include cycle.
+Internal per-compression context. Holds a copy of the options (which carry the
+custom allocator hook) so a single pointer threads configuration and allocation
+through the code instead of many parameters. Built at each public entry point
+from the caller's ZopfliOptions; util.h forward-typedefs it so ZopfliRealloc can
+take it without an include cycle.
 */
 struct ZopfliContext {
-  const ZopfliOptions* options;
+  ZopfliOptions options;
 };
 
 #endif  /* ZOPFLI_CONTEXT_H_ */

@@ -41,7 +41,7 @@ TEST(Deflate, BlockSizeAutoTypePicksSmallest) {
   uint32_t min3 = std::min(s0, std::min(s1, s2));
   EXPECT_EQ(best, min3);
 
-  ZopfliCleanLZ77Store(NULL, &store);
+  ZopfliCleanLZ77Store(ZopfliDefaultContext(), &store);
 }
 
 TEST(Deflate, UseExpensiveFixedHeuristic) {

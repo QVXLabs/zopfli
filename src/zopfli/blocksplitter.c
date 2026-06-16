@@ -236,7 +236,7 @@ void ZopfliBlockSplitLZ77(const ZopfliOptions* options,
   /* Reused across all block-size evaluations of this split. */
   ZopfliKatajainenScratch scratch;
 
-  ctxv.options = options;
+  ctxv.options = *options;
 
   if (lz77->size < 10) return;  /* This code fails on tiny files. */
 
@@ -306,7 +306,7 @@ void ZopfliBlockSplit(const ZopfliOptions* options,
   ZopfliHash hash;
   ZopfliHash* h = &hash;
 
-  ctxv.options = options;
+  ctxv.options = *options;
 
   ZopfliInitLZ77Store(in, &store);
   ZopfliInitBlockState(ctx, instart, inend, 0, &s);
@@ -349,8 +349,8 @@ void ZopfliBlockSplitSimple(const uint8_t* in,
                             size_t** splitpoints, size_t* npoints) {
   size_t i = instart;
   while (i < inend) {
-    /* No options/context here; allocate via the default allocator. */
-    ZOPFLI_APPEND_DATA(NULL, i, splitpoints, npoints);
+    /* No caller options here; use the default-allocator context. */
+    ZOPFLI_APPEND_DATA(ZopfliDefaultContext(), i, splitpoints, npoints);
     i += blocksize;
   }
   (void)in;

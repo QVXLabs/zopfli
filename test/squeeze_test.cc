@@ -16,7 +16,7 @@ TEST(Squeeze, OptimalFixed) {
   ZopfliOptions options;
   ZopfliInitOptions(&options);
   ZopfliContext ctx;
-  ctx.options = &options;
+  ctx.options = options;
   ZopfliBlockState s;
   ZopfliInitBlockState(&ctx, 0, in.size(), 1, &s);
   ZopfliLZ77Store store;
@@ -25,7 +25,7 @@ TEST(Squeeze, OptimalFixed) {
   EXPECT_GT(store.size, 0u);
   // The parse must reconstruct exactly the input byte length.
   EXPECT_EQ(ZopfliLZ77GetByteRange(&store, 0, store.size), in.size());
-  ZopfliCleanLZ77Store(NULL, &store);
+  ZopfliCleanLZ77Store(ZopfliDefaultContext(), &store);
   ZopfliCleanBlockState(&s);
 }
 
@@ -34,7 +34,7 @@ TEST(Squeeze, OptimalWithIterations) {
   ZopfliOptions options;
   ZopfliInitOptions(&options);
   ZopfliContext ctx;
-  ctx.options = &options;
+  ctx.options = options;
   ZopfliBlockState s;
   ZopfliInitBlockState(&ctx, 0, in.size(), 1, &s);
   ZopfliLZ77Store store;
@@ -42,7 +42,7 @@ TEST(Squeeze, OptimalWithIterations) {
   ZopfliLZ77Optimal(&s, in.data(), 0, in.size(), /*numiterations=*/3,
                     &store);
   EXPECT_EQ(ZopfliLZ77GetByteRange(&store, 0, store.size), in.size());
-  ZopfliCleanLZ77Store(NULL, &store);
+  ZopfliCleanLZ77Store(ZopfliDefaultContext(), &store);
   ZopfliCleanBlockState(&s);
 }
 

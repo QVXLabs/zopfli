@@ -27,8 +27,8 @@ void* TrackingRealloc(void* alloc_context, void* ptr, size_t size) {
   return realloc(ptr, size);
 }
 
-std::vector<unsigned char> CompressDefault(ZopfliFormat fmt,
-                                           const std::vector<unsigned char>& in) {
+std::vector<unsigned char> CompressDefault(
+    ZopfliFormat fmt, const std::vector<unsigned char>& in) {
   ZopfliOptions options;
   ZopfliInitOptions(&options);
   unsigned char* out = nullptr;

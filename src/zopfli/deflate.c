@@ -624,12 +624,13 @@ uint32_t ZopfliCalculateBlockSizeScratch(const ZopfliContext* ctx,
 
 uint32_t ZopfliCalculateBlockSize(const ZopfliLZ77Store* lz77,
                                 size_t lstart, size_t lend, int btype) {
+  const ZopfliContext* ctx = ZopfliDefaultContext();
   ZopfliKatajainenScratch scratch;
   uint32_t result;
   ZopfliInitKatajainenScratch(&scratch);
   result =
-      ZopfliCalculateBlockSizeScratch(NULL, &scratch, lz77, lstart, lend, btype);
-  ZopfliCleanKatajainenScratch(NULL, &scratch);
+      ZopfliCalculateBlockSizeScratch(ctx, &scratch, lz77, lstart, lend, btype);
+  ZopfliCleanKatajainenScratch(ctx, &scratch);
   return result;
 }
 
@@ -651,12 +652,13 @@ uint32_t ZopfliCalculateBlockSizeAutoTypeScratch(
 
 uint32_t ZopfliCalculateBlockSizeAutoType(const ZopfliLZ77Store* lz77,
                                         size_t lstart, size_t lend) {
+  const ZopfliContext* ctx = ZopfliDefaultContext();
   ZopfliKatajainenScratch scratch;
   uint32_t result;
   ZopfliInitKatajainenScratch(&scratch);
-  result = ZopfliCalculateBlockSizeAutoTypeScratch(NULL, &scratch, lz77, lstart,
+  result = ZopfliCalculateBlockSizeAutoTypeScratch(ctx, &scratch, lz77, lstart,
                                                    lend);
-  ZopfliCleanKatajainenScratch(NULL, &scratch);
+  ZopfliCleanKatajainenScratch(ctx, &scratch);
   return result;
 }
 
@@ -757,7 +759,7 @@ static void AddLZ77Block(const ZopfliContext* ctx,
 
     detect_tree_size = buf->size;
     AddDynamicTree(ctx, scratch, ll_lengths, d_lengths, bp, buf);
-    if (ctx->options->verbose) {
+    if (ctx->options.verbose) {
       fprintf(stderr, "treesize: %zu\n", buf->size - detect_tree_size);
     }
   }
@@ -776,7 +778,7 @@ static void AddLZ77Block(const ZopfliContext* ctx,
     uncompressed_size += lz77->dists[i] == 0 ? 1 : lz77->litlens[i];
   }
   compressed_size = buf->size - detect_block_size;
-  if (ctx->options->verbose) {
+  if (ctx->options.verbose) {
     fprintf(stderr, "compressed block size: %zu (%zuk) (unc: %zu)\n",
            compressed_size, compressed_size / 1024, uncompressed_size);
   }
@@ -853,7 +855,7 @@ the final bit will be set on the last block.
 static void DeflatePart(const ZopfliContext* ctx, int btype, int final,
                         const uint8_t* in, size_t instart, size_t inend,
                         uint8_t* bp, ZopfliBuf* buf) {
-  const ZopfliOptions* options = ctx->options;
+  const ZopfliOptions* options = &ctx->options;
   size_t i;
   /* byte coordinates rather than lz77 index */
   size_t* splitpoints_uncompressed = NULL;
@@ -963,7 +965,7 @@ void ZopfliDeflatePart(const ZopfliOptions* options, int btype, int final,
                        size_t* outsize) {
   ZopfliContext ctx;
   ZopfliBuf buf;
-  ctx.options = options;
+  ctx.options = *options;
   buf.data = *out;
   buf.size = *outsize;
   buf.cap = *outsize;
@@ -990,14 +992,14 @@ void ZopfliDeflateBuf(const ZopfliOptions* options, int btype, int final,
                       const uint8_t* in, size_t insize,
                       uint8_t* bp, ZopfliBuf* buf) {
   size_t offset = buf->size;
-  ZopfliOptions opts = *options;
   ZopfliContext ctx;
-  ctx.options = &opts;
-  assert(opts.numiterations >= 0);
-  if (opts.numiterations == 0) opts.numiterations = AutoIterations(insize);
-  if (opts.verbose && options->numiterations == 0) {
+  ctx.options = *options;
+  assert(ctx.options.numiterations >= 0);
+  if (ctx.options.numiterations == 0)
+    ctx.options.numiterations = AutoIterations(insize);
+  if (ctx.options.verbose && options->numiterations == 0) {
     fprintf(stderr, "Auto iterations: %d (input %zu bytes)\n",
-            opts.numiterations, insize);
+            ctx.options.numiterations, insize);
   }
   {
   /* Effective master block size. Clamp to ZOPFLI_COST_MAX_BLOCK_SIZE (and use

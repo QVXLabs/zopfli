@@ -63,7 +63,7 @@ inline void GreedyStore(const std::vector<unsigned char>& in,
   ZopfliOptions options;
   ZopfliInitOptions(&options);
   ZopfliContext ctx;
-  ctx.options = &options;
+  ctx.options = options;
   ZopfliBlockState s;
   ZopfliInitBlockState(&ctx, 0, in.size(), 1, &s);
   ZopfliHash h;

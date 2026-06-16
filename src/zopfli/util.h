@@ -268,10 +268,17 @@ typedef struct ZopfliContext ZopfliContext;
 /* Appends one byte, growing by the golden ratio when full. */
 void ZopfliBufPush(const ZopfliContext* ctx, ZopfliBuf* b, uint8_t value);
 
-/* Single allocation primitive (malloc/realloc/free unified). size == 0 frees ptr
-and returns NULL (portable, unlike raw realloc(ptr, 0)); ptr == NULL allocates.
-Routes through ctx's custom allocator when set, else the standard library; ctx
-may be NULL. Aborts on genuine allocation failure. */
+/* Default allocator (plain realloc/free) installed into options->zrealloc by
+ZopfliInitOptions. size 0 frees ptr -> NULL (portable, unlike realloc(ptr, 0));
+ptr NULL allocates. Exposed so embedders can wrap it. */
+void* ZopfliDefaultRealloc(void* alloc_context, void* ptr, size_t size);
+
+/* Default-allocator context for allocations outside any caller options. */
+const ZopfliContext* ZopfliDefaultContext(void);
+
+/* Single allocation primitive (malloc/realloc/free unified). size 0 frees ptr,
+ptr NULL allocates. Routes through ctx->options->zrealloc; ctx must be non-NULL
+(use ZopfliDefaultContext when there are no options). Aborts on real OOM. */
 void* ZopfliRealloc(const ZopfliContext* ctx, void* ptr, size_t size);
 
 #endif  /* ZOPFLI_UTIL_H_ */

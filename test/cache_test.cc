@@ -6,15 +6,15 @@ namespace {
 
 TEST(Cache, EmptyHasNoCachedSublen) {
   ZopfliLongestMatchCache lmc;
-  ZopfliInitCache(NULL, 16, &lmc);
+  ZopfliInitCache(ZopfliDefaultContext(), 16, &lmc);
   EXPECT_EQ(ZopfliMaxCachedSublen(&lmc, 0, 0), 0u);
-  ZopfliCleanCache(NULL, &lmc);
+  ZopfliCleanCache(ZopfliDefaultContext(), &lmc);
 }
 
 TEST(Cache, SublenRoundTrip) {
   const size_t blocksize = 8;
   ZopfliLongestMatchCache lmc;
-  ZopfliInitCache(NULL, blocksize, &lmc);
+  ZopfliInitCache(ZopfliDefaultContext(), blocksize, &lmc);
 
   // Build a sublen where each length maps to a distinct distance.
   const unsigned short length = 40;
@@ -34,7 +34,7 @@ TEST(Cache, SublenRoundTrip) {
     EXPECT_EQ(got[i], sublen[i]) << "at length " << i;
   }
 
-  ZopfliCleanCache(NULL, &lmc);
+  ZopfliCleanCache(ZopfliDefaultContext(), &lmc);
 }
 
 }  // namespace
