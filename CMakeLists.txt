@@ -185,6 +185,7 @@ if(BUILD_TESTING)
     test/deflate_test.cc
     test/squeeze_test.cc
     test/fixedpoint_range_test.cc
+    test/custom_allocator_test.cc
   )
   target_link_libraries(zopfli_tests PRIVATE libzopfli GTest::gtest_main)
   set_target_properties(zopfli_tests PROPERTIES

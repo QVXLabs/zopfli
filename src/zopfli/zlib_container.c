@@ -23,11 +23,12 @@ Author: afalls@qvxlabs.com (Ardavon Falls)
 
 #include <stdio.h>
 
+#include "context.h"
 #include "deflate.h"
 
 
 /* Calculates the adler32 checksum of the data */
-static unsigned adler32(const unsigned char* data, size_t size)
+static unsigned adler32(const uint8_t* data, size_t size)
 {
   static const unsigned sums_overflow = 5550;
   unsigned s1 = 1;
@@ -49,27 +50,37 @@ static unsigned adler32(const unsigned char* data, size_t size)
 }
 
 void ZopfliZlibCompress(const ZopfliOptions* options,
-                        const unsigned char* in, size_t insize,
-                        unsigned char** out, size_t* outsize) {
-  unsigned char bitpointer = 0;
-  unsigned checksum = adler32(in, (unsigned)insize);
+                        const uint8_t* in, size_t insize,
+                        uint8_t** out, size_t* outsize) {
+  uint8_t bitpointer = 0;
+  unsigned checksum = adler32(in, insize);
   unsigned cmf = 120;  /* CM 8, CINFO 7. See zlib spec.*/
   unsigned flevel = 3;
   unsigned fdict = 0;
   unsigned cmfflg = 256 * cmf + fdict * 32 + flevel * 64;
   unsigned fcheck = 31 - cmfflg % 31;
+  ZopfliContext ctx;
+  ZopfliBuf buf;
   cmfflg += fcheck;
 
-  ZOPFLI_APPEND_DATA(cmfflg / 256, out, outsize);
-  ZOPFLI_APPEND_DATA(cmfflg % 256, out, outsize);
+  ctx.options = *options;
+  buf.data = *out;
+  buf.size = *outsize;
+  buf.cap = *outsize;
 
-  ZopfliDeflate(options, 2 /* dynamic block */, 1 /* final */,
-                in, insize, &bitpointer, out, outsize);
+  ZopfliBufPush(&ctx, &buf, (uint8_t)((cmfflg >> 8) & 0xff));
+  ZopfliBufPush(&ctx, &buf, (uint8_t)(cmfflg & 0xff));
 
-  ZOPFLI_APPEND_DATA((checksum >> 24) % 256, out, outsize);
-  ZOPFLI_APPEND_DATA((checksum >> 16) % 256, out, outsize);
-  ZOPFLI_APPEND_DATA((checksum >> 8) % 256, out, outsize);
-  ZOPFLI_APPEND_DATA(checksum % 256, out, outsize);
+  ZopfliDeflateBuf(options, 2 /* dynamic block */, 1 /* final */,
+                   in, insize, &bitpointer, &buf);
+
+  ZopfliBufPush(&ctx, &buf, (uint8_t)((checksum >> 24) & 0xff));
+  ZopfliBufPush(&ctx, &buf, (uint8_t)((checksum >> 16) & 0xff));
+  ZopfliBufPush(&ctx, &buf, (uint8_t)((checksum >> 8) & 0xff));
+  ZopfliBufPush(&ctx, &buf, (uint8_t)(checksum & 0xff));
+
+  *out = buf.data;
+  *outsize = buf.size;
 
   if (options->verbose) {
     /* Percent removed with 2 decimals, integer-only (basis points). */

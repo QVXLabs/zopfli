@@ -25,6 +25,7 @@ Author: afalls@qvxlabs.com (Ardavon Falls)
 #include <stdio.h>
 #include <stdlib.h>
 
+#include "context.h"
 #include "deflate.h"
 #include "squeeze.h"
 #include "tree.h"
@@ -36,6 +37,14 @@ i: the current parameter of f(i)
 context: for your implementation
 */
 typedef uint32_t FindMinimumFun(size_t i, void* context);
+
+typedef struct SplitCostContext {
+  const ZopfliContext* ctx;
+  const ZopfliLZ77Store* lz77;
+  ZopfliKatajainenScratch* scratch;
+  size_t start;
+  size_t end;
+} SplitCostContext;
 
 /*
 Finds minimum of function f(i) where i is of type size_t, f(i) is of type
@@ -107,19 +116,13 @@ dists: ll77 distances
 lstart: start of block
 lend: end of block (not inclusive)
 */
-static uint32_t EstimateCost(ZopfliKatajainenScratch* scratch,
+static uint32_t EstimateCost(const ZopfliContext* ctx,
+                           ZopfliKatajainenScratch* scratch,
                            const ZopfliLZ77Store* lz77,
                            size_t lstart, size_t lend) {
-  return ZopfliCalculateBlockSizeAutoTypeScratch(scratch, lz77, lstart, lend);
+  return ZopfliCalculateBlockSizeAutoTypeScratch(ctx, scratch, lz77, lstart,
+                                                 lend);
 }
-
-typedef struct SplitCostContext {
-  const ZopfliLZ77Store* lz77;
-  ZopfliKatajainenScratch* scratch;
-  size_t start;
-  size_t end;
-} SplitCostContext;
-
 
 /*
 Gets the cost which is the sum of the cost of the left and the right section
@@ -128,13 +131,14 @@ type: FindMinimumFun
 */
 static uint32_t SplitCost(size_t i, void* context) {
   SplitCostContext* c = (SplitCostContext*)context;
-  return EstimateCost(c->scratch, c->lz77, c->start, i)
-      + EstimateCost(c->scratch, c->lz77, i, c->end);
+  return EstimateCost(c->ctx, c->scratch, c->lz77, c->start, i)
+      + EstimateCost(c->ctx, c->scratch, c->lz77, i, c->end);
 }
 
-static void AddSorted(size_t value, size_t** out, size_t* outsize) {
+static void AddSorted(const ZopfliContext* ctx, size_t value,
+                      size_t** out, size_t* outsize) {
   size_t i;
-  ZOPFLI_APPEND_DATA(value, out, outsize);
+  ZOPFLI_APPEND_DATA(ctx, value, out, outsize);
   for (i = 0; i + 1 < *outsize; i++) {
     if ((*out)[i] > value) {
       size_t j;
@@ -150,10 +154,11 @@ static void AddSorted(size_t value, size_t** out, size_t* outsize) {
 /*
 Prints the block split points as decimal and hex values in the terminal.
 */
-static void PrintBlockSplitPoints(const ZopfliLZ77Store* lz77,
+static void PrintBlockSplitPoints(const ZopfliContext* ctx,
+                                  const ZopfliLZ77Store* lz77,
                                   const size_t* lz77splitpoints,
                                   size_t nlz77points) {
-  size_t* splitpoints = 0;
+  size_t* splitpoints = NULL;
   size_t npoints = 0;
   size_t i;
   /* The input is given as lz77 indices, but we want to see the uncompressed
@@ -163,7 +168,7 @@ static void PrintBlockSplitPoints(const ZopfliLZ77Store* lz77,
     for (i = 0; i < lz77->size; i++) {
       size_t length = lz77->dists[i] == 0 ? 1 : lz77->litlens[i];
       if (lz77splitpoints[npoints] == i) {
-        ZOPFLI_APPEND_DATA(pos, &splitpoints, &npoints);
+        ZOPFLI_APPEND_DATA(ctx, pos, &splitpoints, &npoints);
         if (npoints == nlz77points) break;
       }
       pos += length;
@@ -181,7 +186,7 @@ static void PrintBlockSplitPoints(const ZopfliLZ77Store* lz77,
   }
   fprintf(stderr, ")\n");
 
-  free(splitpoints);
+  ZopfliRealloc(ctx, splitpoints, 0);
 }
 
 /*
@@ -198,7 +203,7 @@ lend: output variable, giving end of block.
 returns 1 if a block was found, 0 if no block found (all are done).
 */
 static int FindLargestSplittableBlock(
-    size_t lz77size, const unsigned char* done,
+    size_t lz77size, const uint8_t* done,
     const size_t* splitpoints, size_t npoints,
     size_t* lstart, size_t* lend) {
   size_t longest = 0;
@@ -220,21 +225,24 @@ static int FindLargestSplittableBlock(
 void ZopfliBlockSplitLZ77(const ZopfliOptions* options,
                           const ZopfliLZ77Store* lz77, size_t maxblocks,
                           size_t** splitpoints, size_t* npoints) {
+  ZopfliContext ctxv;
+  const ZopfliContext* ctx = &ctxv;
   size_t lstart, lend;
   size_t i;
   size_t llpos = 0;
   size_t numblocks = 1;
-  unsigned char* done;
+  uint8_t* done;
   uint32_t splitcost, origcost;
   /* Reused across all block-size evaluations of this split. */
   ZopfliKatajainenScratch scratch;
+
+  ctxv.options = *options;
 
   if (lz77->size < 10) return;  /* This code fails on tiny files. */
 
   ZopfliInitKatajainenScratch(&scratch);
 
-  done = (unsigned char*)malloc(lz77->size);
-  if (!done) exit(-1); /* Allocation failed. */
+  done = (uint8_t*)ZopfliRealloc(ctx, NULL, lz77->size);
   for (i = 0; i < lz77->size; i++) done[i] = 0;
 
   lstart = 0;
@@ -246,6 +254,7 @@ void ZopfliBlockSplitLZ77(const ZopfliOptions* options,
       break;
     }
 
+    c.ctx = ctx;
     c.lz77 = lz77;
     c.scratch = &scratch;
     c.start = lstart;
@@ -256,12 +265,12 @@ void ZopfliBlockSplitLZ77(const ZopfliOptions* options,
     assert(llpos > lstart);
     assert(llpos < lend);
 
-    origcost = EstimateCost(&scratch, lz77, lstart, lend);
+    origcost = EstimateCost(ctx, &scratch, lz77, lstart, lend);
 
     if (splitcost > origcost || llpos == lstart + 1 || llpos == lend) {
       done[lstart] = 1;
     } else {
-      AddSorted(llpos, splitpoints, npoints);
+      AddSorted(ctx, llpos, splitpoints, npoints);
       numblocks++;
     }
 
@@ -276,31 +285,35 @@ void ZopfliBlockSplitLZ77(const ZopfliOptions* options,
   }
 
   if (options->verbose) {
-    PrintBlockSplitPoints(lz77, *splitpoints, *npoints);
+    PrintBlockSplitPoints(ctx, lz77, *splitpoints, *npoints);
   }
 
-  ZopfliCleanKatajainenScratch(&scratch);
-  free(done);
+  ZopfliCleanKatajainenScratch(ctx, &scratch);
+  ZopfliRealloc(ctx, done, 0);
 }
 
 void ZopfliBlockSplit(const ZopfliOptions* options,
-                      const unsigned char* in, size_t instart, size_t inend,
+                      const uint8_t* in, size_t instart, size_t inend,
                       size_t maxblocks, size_t** splitpoints, size_t* npoints) {
+  ZopfliContext ctxv;
+  const ZopfliContext* ctx = &ctxv;
   size_t pos = 0;
   size_t i;
   ZopfliBlockState s;
-  size_t* lz77splitpoints = 0;
+  size_t* lz77splitpoints = NULL;
   size_t nlz77points = 0;
   ZopfliLZ77Store store;
   ZopfliHash hash;
   ZopfliHash* h = &hash;
 
+  ctxv.options = *options;
+
   ZopfliInitLZ77Store(in, &store);
-  ZopfliInitBlockState(options, instart, inend, 0, &s);
-  ZopfliAllocHash(ZOPFLI_WINDOW_SIZE, h);
+  ZopfliInitBlockState(ctx, instart, inend, 0, &s);
+  ZopfliAllocHash(ctx, ZOPFLI_WINDOW_SIZE, h);
 
   *npoints = 0;
-  *splitpoints = 0;
+  *splitpoints = NULL;
 
   /* Unintuitively, Using a simple LZ77 method here instead of ZopfliLZ77Optimal
   results in better blocks. */
@@ -316,7 +329,7 @@ void ZopfliBlockSplit(const ZopfliOptions* options,
     for (i = 0; i < store.size; i++) {
       size_t length = store.dists[i] == 0 ? 1 : store.litlens[i];
       if (lz77splitpoints[*npoints] == i) {
-        ZOPFLI_APPEND_DATA(pos, splitpoints, npoints);
+        ZOPFLI_APPEND_DATA(ctx, pos, splitpoints, npoints);
         if (*npoints == nlz77points) break;
       }
       pos += length;
@@ -324,19 +337,20 @@ void ZopfliBlockSplit(const ZopfliOptions* options,
   }
   assert(*npoints == nlz77points);
 
-  free(lz77splitpoints);
+  ZopfliRealloc(ctx, lz77splitpoints, 0);
   ZopfliCleanBlockState(&s);
-  ZopfliCleanLZ77Store(&store);
-  ZopfliCleanHash(h);
+  ZopfliCleanLZ77Store(ctx, &store);
+  ZopfliCleanHash(ctx, h);
 }
 
-void ZopfliBlockSplitSimple(const unsigned char* in,
+void ZopfliBlockSplitSimple(const uint8_t* in,
                             size_t instart, size_t inend,
                             size_t blocksize,
                             size_t** splitpoints, size_t* npoints) {
   size_t i = instart;
   while (i < inend) {
-    ZOPFLI_APPEND_DATA(i, splitpoints, npoints);
+    /* No caller options here; use the default-allocator context. */
+    ZOPFLI_APPEND_DATA(ZopfliDefaultContext(), i, splitpoints, npoints);
     i += blocksize;
   }
   (void)in;

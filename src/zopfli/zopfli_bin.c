@@ -60,7 +60,7 @@ Loads a file into a memory array. Returns 1 on success, 0 if file doesn't exist
 or couldn't be opened.
 */
 static int LoadFile(const char* filename,
-                    unsigned char** out, size_t* outsize) {
+                    uint8_t** out, size_t* outsize) {
   FILE* file;
   long long filesize;
 
@@ -85,17 +85,14 @@ static int LoadFile(const char* filename,
   }
   *outsize = (size_t)filesize;
 
-  *out = (unsigned char*)malloc(*outsize ? *outsize : 1);
-  if (!*out) {
-    fprintf(stderr, "Error: out of memory loading file.\n");
-    exit(EXIT_FAILURE);
-  }
+  *out = (uint8_t*)ZopfliRealloc(ZopfliDefaultContext(), NULL,
+                                 *outsize ? *outsize : 1);
 
   if (*outsize) {
     size_t testsize = fread(*out, 1, *outsize, file);
     if (testsize != *outsize) {
       /* It could be a directory */
-      free(*out);
+      ZopfliRealloc(ZopfliDefaultContext(), *out, 0);
       *out = 0;
       *outsize = 0;
       fclose(file);
@@ -111,7 +108,7 @@ static int LoadFile(const char* filename,
 Saves a file from a memory array, overwriting the file if it existed.
 */
 static void SaveFile(const char* filename,
-                     const unsigned char* in, size_t insize) {
+                     const uint8_t* in, size_t insize) {
   FILE* file = fopen(filename, "wb" );
   if (file == NULL) {
       fprintf(stderr,"Error: Cannot write to output file, terminating.\n");
@@ -129,9 +126,9 @@ static void CompressFile(const ZopfliOptions* options,
                          ZopfliFormat output_type,
                          const char* infilename,
                          const char* outfilename) {
-  unsigned char* in;
+  uint8_t* in;
   size_t insize;
-  unsigned char* out = 0;
+  uint8_t* out = 0;
   size_t outsize = 0;
   if (!LoadFile(infilename, &in, &insize)) {
     fprintf(stderr, "Invalid filename: %s\n", infilename);
@@ -150,8 +147,14 @@ static void CompressFile(const ZopfliOptions* options,
     fwrite(out, 1, outsize, stdout);
   }
 
-  free(out);
-  free(in);
+  /* out came from ZopfliCompress via options->zrealloc, so free it through the
+  same hook (free() when unset). in is the CLI's own default-allocator buffer. */
+  if (options->zrealloc) {
+    options->zrealloc(options->alloc_context, out, 0);
+  } else {
+    free(out);
+  }
+  ZopfliRealloc(ZopfliDefaultContext(), in, 0);
 }
 
 /*
@@ -159,8 +162,7 @@ Add two strings together. Size does not matter. Result must be freed.
 */
 static char* AddStrings(const char* str1, const char* str2) {
   size_t len = strlen(str1) + strlen(str2);
-  char* result = (char*)malloc(len + 1);
-  if (!result) exit(-1); /* Allocation failed. */
+  char* result = (char*)ZopfliRealloc(ZopfliDefaultContext(), NULL, len + 1);
   strcpy(result, str1);
   strcat(result, str2);
   return result;
@@ -235,7 +237,7 @@ int main(int argc, char* argv[]) {
         fprintf(stderr, "Saving to: %s\n", outfilename);
       }
       CompressFile(&options, output_type, filename, outfilename);
-      free(outfilename);
+      ZopfliRealloc(ZopfliDefaultContext(), outfilename, 0);
     }
   }
 

@@ -8,28 +8,28 @@ TEST(Lz77, StoreAppendCopyByteRange) {
   std::vector<unsigned char> data(64, 'a');
   ZopfliLZ77Store a;
   ZopfliInitLZ77Store(data.data(), &a);
-  ZopfliStoreLitLenDist('a', 0, 0, &a);     // literal
-  ZopfliStoreLitLenDist(5, 1, 1, &a);       // length/dist pair
+  ZopfliStoreLitLenDist(ZopfliDefaultContext(), 'a', 0, 0, &a);  // literal
+  ZopfliStoreLitLenDist(ZopfliDefaultContext(), 5, 1, 1, &a);  // len/dist pair
   EXPECT_EQ(a.size, 2u);
   // 1 literal byte + a length-5 match = 6 bytes.
   EXPECT_EQ(ZopfliLZ77GetByteRange(&a, 0, a.size), 6u);
 
   ZopfliLZ77Store b;
   ZopfliInitLZ77Store(data.data(), &b);
-  ZopfliAppendLZ77Store(&a, &b);
+  ZopfliAppendLZ77Store(ZopfliDefaultContext(), &a, &b);
   EXPECT_EQ(b.size, 2u);
 
   // ZopfliCopyLZ77Store cleans the destination first, so it must be
   // initialized before copying into it.
   ZopfliLZ77Store c;
   ZopfliInitLZ77Store(data.data(), &c);
-  ZopfliCopyLZ77Store(&a, &c);
+  ZopfliCopyLZ77Store(ZopfliDefaultContext(), &a, &c);
   EXPECT_EQ(c.size, a.size);
   EXPECT_EQ(c.dists[1], a.dists[1]);
 
-  ZopfliCleanLZ77Store(&a);
-  ZopfliCleanLZ77Store(&b);
-  ZopfliCleanLZ77Store(&c);
+  ZopfliCleanLZ77Store(ZopfliDefaultContext(), &a);
+  ZopfliCleanLZ77Store(ZopfliDefaultContext(), &b);
+  ZopfliCleanLZ77Store(ZopfliDefaultContext(), &c);
 }
 
 TEST(Lz77, Histogram) {
@@ -47,7 +47,7 @@ TEST(Lz77, Histogram) {
   // End-of-block symbol (256) is not part of the store histogram.
   EXPECT_EQ(ll_total, store.size);
 
-  ZopfliCleanLZ77Store(&store);
+  ZopfliCleanLZ77Store(ZopfliDefaultContext(), &store);
 }
 
 TEST(Lz77, FindLongestMatchFindsRepeat) {
@@ -56,10 +56,12 @@ TEST(Lz77, FindLongestMatchFindsRepeat) {
       "abcdefghabcdefghabcdefghabcdefghabcdefgh");
   ZopfliOptions options;
   ZopfliInitOptions(&options);
+  ZopfliContext ctx;
+  ctx.options = options;
   ZopfliBlockState s;
-  ZopfliInitBlockState(&options, 0, in.size(), 1, &s);
+  ZopfliInitBlockState(&ctx, 0, in.size(), 1, &s);
   ZopfliHash h;
-  ZopfliAllocHash(ZOPFLI_WINDOW_SIZE, &h);
+  ZopfliAllocHash(ZopfliDefaultContext(), ZOPFLI_WINDOW_SIZE, &h);
   ZopfliResetHash(ZOPFLI_WINDOW_SIZE, &h);
   ZopfliWarmupHash(in.data(), 0, in.size(), &h);
 
@@ -75,7 +77,7 @@ TEST(Lz77, FindLongestMatchFindsRepeat) {
   EXPECT_GE(length, 8u);
   EXPECT_EQ(distance, 8u);
 
-  ZopfliCleanHash(&h);
+  ZopfliCleanHash(ZopfliDefaultContext(), &h);
   ZopfliCleanBlockState(&s);
 }
 

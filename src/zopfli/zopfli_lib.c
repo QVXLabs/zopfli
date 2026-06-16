@@ -21,19 +21,27 @@ Author: jyrki.alakuijala@gmail.com (Jyrki Alakuijala)
 
 #include "deflate.h"
 #include "gzip_container.h"
+#include "util.h"
 #include "zlib_container.h"
 
 #include <assert.h>
 
 void ZopfliCompress(const ZopfliOptions* options, ZopfliFormat output_type,
-                    const unsigned char* in, size_t insize,
-                    unsigned char** out, size_t* outsize) {
+                    const uint8_t* in, size_t insize,
+                    uint8_t** out, size_t* outsize) {
+  /* Ensure the allocator hook is set once, here, so the downstream code can call
+  it unconditionally. ZopfliInitOptions already installs it; this also covers a
+  caller who built ZopfliOptions without it. */
+  ZopfliOptions opts = *options;
+  if (!opts.zrealloc) opts.zrealloc = ZopfliDefaultRealloc;
+  options = &opts;
+
   if (output_type == ZOPFLI_FORMAT_GZIP) {
     ZopfliGzipCompress(options, in, insize, out, outsize);
   } else if (output_type == ZOPFLI_FORMAT_ZLIB) {
     ZopfliZlibCompress(options, in, insize, out, outsize);
   } else if (output_type == ZOPFLI_FORMAT_DEFLATE) {
-    unsigned char bp = 0;
+    uint8_t bp = 0;
     ZopfliDeflate(options, 2 /* Dynamic block */, 1,
                   in, insize, &bp, out, outsize);
   } else {

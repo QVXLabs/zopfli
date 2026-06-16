@@ -9,7 +9,7 @@ namespace {
 TEST(Tree, BitLengthsRespectMaxAndKraft) {
   size_t counts[6] = {0, 1, 2, 4, 8, 16};
   unsigned bitlengths[6] = {0};
-  ZopfliCalculateBitLengths(counts, 6, 15, bitlengths);
+  ZopfliCalculateBitLengths(ZopfliDefaultContext(), counts, 6, 15, bitlengths);
   double kraft = 0.0;
   for (int i = 0; i < 6; i++) {
     if (counts[i] == 0) continue;
@@ -24,7 +24,7 @@ TEST(Tree, LengthsToSymbolsAreCanonical) {
   // Two symbols of length 1: canonical codes are 0 and 1.
   const unsigned lengths[2] = {1, 1};
   unsigned symbols[2] = {0xffff, 0xffff};
-  ZopfliLengthsToSymbols(lengths, 2, 15, symbols);
+  ZopfliLengthsToSymbols(ZopfliDefaultContext(), lengths, 2, 15, symbols);
   EXPECT_EQ(symbols[0], 0u);
   EXPECT_EQ(symbols[1], 1u);
 }
@@ -32,7 +32,7 @@ TEST(Tree, LengthsToSymbolsAreCanonical) {
 TEST(Tree, LengthsToSymbolsZeroLengthGetsNoCode) {
   const unsigned lengths[3] = {0, 1, 1};
   unsigned symbols[3] = {7, 7, 7};
-  ZopfliLengthsToSymbols(lengths, 3, 15, symbols);
+  ZopfliLengthsToSymbols(ZopfliDefaultContext(), lengths, 3, 15, symbols);
   EXPECT_EQ(symbols[0], 0u);  // zero-length symbol assigned 0
 }
 
