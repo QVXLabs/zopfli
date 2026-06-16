@@ -32,7 +32,7 @@ ZopfliRealloc and need no out-of-memory checks of their own. Returns void* (it
 never returns, since exit() is noreturn) so it slots into the ternary below. */
 static void* ZopfliOutOfMemory(size_t size) {
   fprintf(stderr, "Error: out of memory allocating %zu bytes\n", size);
-  exit(-1);
+  exit(EXIT_FAILURE);
   return NULL;  /* unreachable (exit is noreturn); satisfies MSVC's checker */
 }
 
