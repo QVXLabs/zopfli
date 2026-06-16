@@ -45,3 +45,21 @@ for every change:
 - **Keep output byte-identical** to the pre-change baseline unless explicitly
   agreed otherwise (verify `md5` in both `-i15` and `--i200`, text + binary).
 - **Single-threaded only** — never add threads/OpenMP/parallelism.
+
+### Benchmark corpus (README tables)
+The README perf/memory tables are reproducible with this corpus and method (no
+private corpus is checked in; regenerate it locally):
+- **Text** = the repo's own C/C++ source concatenated
+  (`cat src/zopfli/*.c src/zopfli/*.h src/zopflipng/*.cc
+  src/zopflipng/lodepng/*.cpp src/zopflipng/lodepng/*.h README.md`, ~690 KB
+  base), then **extended by repetition** (`head -c` of the base repeated) to hit
+  the 256 KB / 1 MB / 3 MB / 10 MB sizes. The iterations table uses the first
+  ~415 KB of that base (real, un-repeated source).
+- **Binary** = incompressible random data (`head -c <size> /dev/urandom`).
+- **Stock baseline** = upstream `google/zopfli` built from a shallow clone, for
+  the fork-vs-stock columns.
+- **Method**: i9-8950HK, release `-O3 -DNDEBUG`; speed = `--i15` for both
+  binaries (stock's default), min of 2 runs; memory = peak RSS via
+  `/usr/bin/time -l` at `--i200` on the 3 MB inputs. Re-measure on an idle
+  machine (`ps -Ao pcpu,comm | sort -rn | head`) — wall times are contention-
+  sensitive. Compressed sizes are deterministic; only timings are noisy.

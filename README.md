@@ -37,23 +37,24 @@ This fork is a drop-in replacement — it emits standard DEFLATE/zlib/gzip that 
 existing decoder reads — but differs from upstream zopfli in four ways. Each is
 detailed in its own section below; the highlights:
 
-**Faster.** At a matched iteration count the optimal parse is **~2.5× faster
-than stock zopfli** (and a bit more on incompressible data):
+**Faster.** At a matched iteration count the optimal parse is **~2× faster than
+stock zopfli on text and ~3× on incompressible data**:
 
 | Input    | Stock zopfli | QVXLabs/Zopfli | Speedup |
 |----------|-------------:|---------------:|:-------:|
-| 256 KB text   |   1.45 s |   0.70 s | 2.1× |
-| 1 MB text     |   4.77 s |   1.92 s | 2.5× |
-| 3 MB text     |  13.12 s |   5.35 s | 2.5× |
-| 10 MB text    |  43.62 s |  17.69 s | 2.5× |
-| 256 KB binary |   0.44 s |   0.18 s | 2.5× |
-| 1 MB binary   |   1.66 s |   0.65 s | 2.6× |
-| 3 MB binary   |   5.59 s |   1.90 s | 2.9× |
-| 10 MB binary  |  18.63 s |   6.63 s | 2.8× |
+| 256 KB text   |   1.04 s |   0.70 s | 1.5× |
+| 1 MB text     |   3.35 s |   1.87 s | 1.8× |
+| 3 MB text     |   9.91 s |   5.22 s | 1.9× |
+| 10 MB text    |  34.29 s |  17.03 s | 2.0× |
+| 256 KB binary |   0.49 s |   0.17 s | 2.9× |
+| 1 MB binary   |   2.33 s |   0.71 s | 3.3× |
+| 3 MB binary   |   6.16 s |   1.89 s | 3.3× |
+| 10 MB binary  |  19.99 s |   5.82 s | 3.4× |
 
 <sub>Measured on an Intel Core i9-8950HK (Coffee Lake), release `-O3 -DNDEBUG`,
-25 iterations (stock's hardcoded count; the fork was run with `--i25` to match),
-min of 2 runs. Text = concatenated source; binary = incompressible random data.</sub>
+15 iterations (`--i15` for both; stock's default), min of 2 runs. Text =
+concatenated source (zopfli + zopflipng + lodepng), extended by repetition for
+the larger sizes; binary = incompressible random data.</sub>
 
 It also scales much better at high iteration counts: the longest-match cache
 makes passes after the first nearly free, whereas stock's cost is roughly linear
@@ -75,14 +76,13 @@ defines a new canonical, platform-independent encoding. See the
 **Lower memory.** Hot data structures were trimmed to what the data actually
 needs — 16-bit hash tables (right-sized to the used bucket count), 32-bit LZ77
 cumulative histograms, and dropping two precomputed per-symbol arrays that are
-cheaply recomputed on the fly — reducing peak resident memory with
-**byte-identical output**. Measured peak RSS (`/usr/bin/time -l`, 3 MB input,
-`--i200`):
+cheaply recomputed on the fly — so peak resident memory is well below stock
+zopfli's. Measured peak RSS (`/usr/bin/time -l`, 3 MB input, `--i200`):
 
-| Input                         | Before   | After   | Saved          |
-|-------------------------------|---------:|--------:|:--------------:|
-| Text (~3 MB)                  | 35.2 MB  | 30.4 MB | 4.8 MB (−14%)  |
-| Incompressible binary (~3 MB) | 100.4 MB | 69.9 MB | 30.5 MB (−30%) |
+| Input                         | Stock zopfli | QVXLabs/Zopfli | Saved          |
+|-------------------------------|-------------:|---------------:|:--------------:|
+| Text (~3 MB)                  |   23.7 MB    |    15.2 MB     | 8.5 MB (−36%)  |
+| Incompressible binary (~3 MB) |  122.0 MB    |    75.1 MB     | 46.9 MB (−38%) |
 
 Incompressible input has ~1 LZ77 symbol per byte, so the per-symbol arrays — and
 thus the savings — are largest there; text compresses to fewer symbols.
@@ -142,21 +142,23 @@ The table below compresses ~415 KB of text at various **fixed** `--i#` counts
 
 | Iterations (`--i`) | Compressed size | Reduction vs `--i15` | Relative runtime |
 |:------------------:|----------------:|:--------------------:|:----------------:|
-| 5                  |   101,950 bytes | −0.06% (**worse**)   |       ~0.3×       |
-| 15                 |   101,886 bytes | —                    |        1×        |
-| 30                 |   101,857 bytes | 0.03%                |        ~2×        |
-| 50                 |   101,854 bytes | 0.03%                |        ~3×        |
-| 100                |   101,796 bytes | 0.09%                |        ~7×        |
-| 200                |   101,704 bytes | 0.18%                |       ~13×        |
-| 500                |   101,674 bytes | 0.21%                |       ~33×        |
-| 1000               |   101,661 bytes | 0.22%                |       ~67×        |
+| 5                  |   101,124 bytes | −0.09% (**worse**)   |      ~0.7×        |
+| 15                 |   101,036 bytes | —                    |        1×        |
+| 30                 |   101,021 bytes | 0.01%                |       ~1.3×       |
+| 50                 |   101,016 bytes | 0.02%                |       ~1.8×       |
+| 100                |   100,996 bytes | 0.04%                |        ~3×        |
+| 200                |   100,994 bytes | 0.04%                |       ~5.4×       |
+| 500                |   100,992 bytes | 0.04%                |       ~13×        |
+| 1000               |   100,986 bytes | 0.05%                |       ~25×        |
 
-Takeaways: `--i15` already captures ~99.8% of what `--i1000` achieves; the
-*entire* remaining headroom from iterations is ~0.22%, and most of it is in the
-first ~8 passes. `--i5` hasn't converged (output is larger). The auto default
-spends more passes on larger inputs, where that thin tail is worth chasing;
-force a fixed `--i#` to cap runtime. Highly compressible (text-like) data
-benefits most — incompressible or binary data converges flatter.
+Takeaways: `--i15` already captures all but ~0.05% of what `--i1000` achieves;
+that thin tail is the *entire* remaining headroom from iterations, and most of it
+lands in the first ~8 passes. `--i5` hasn't converged (output is larger). The
+longest-match cache makes passes after the first cheap, so the runtime cost of
+high counts is far below stock's roughly linear scaling. The auto default spends
+more passes on larger inputs, where that tail is worth chasing; force a fixed
+`--i#` to cap runtime. Highly compressible (text-like) data benefits most —
+incompressible or binary data converges flatter.
 
 ### Block splitting — `blocksplitting`, `blocksplittingmax`, `blocksplittinglast`
 
