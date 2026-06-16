@@ -3,6 +3,11 @@
 Repo-specific guidance. General coding preferences live in the user-global
 CLAUDE.md; this file adds what's specific to this codebase.
 
+## Upstream
+Upstream zopfli is read-only — this fork does not merge from it. Don't preserve
+upstream's file layout or structure for merge-ability; the code is free to
+diverge (reorganize, rename, restructure) when it improves the codebase.
+
 ## Language & style
 - **gnu99** — built with `-std=gnu99 -pedantic -W -Wall -Wextra` (C99 for
   `<stdint.h>` fixed-width cost types, plus the GNU `__builtin_clz` the code

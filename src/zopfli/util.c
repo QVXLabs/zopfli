@@ -15,6 +15,7 @@ limitations under the License.
 
 Author: lode.vandevenne@gmail.com (Lode Vandevenne)
 Author: jyrki.alakuijala@gmail.com (Jyrki Alakuijala)
+Author: afalls@qvxlabs.com (Ardavon Falls)
 */
 
 #include "util.h"
@@ -24,6 +25,29 @@ Author: jyrki.alakuijala@gmail.com (Jyrki Alakuijala)
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
+
+/* Reports an allocation failure and aborts; callers never see a failed
+ZopfliRealloc and need no out-of-memory checks of their own. Returns void* (it
+never returns, since exit() is noreturn) so it slots into the ternary below. */
+static void* ZopfliOutOfMemory(size_t size) {
+  fprintf(stderr, "Error: out of memory allocating %zu bytes\n", size);
+  exit(-1);
+  return NULL;  /* unreachable (exit is noreturn); satisfies MSVC's checker */
+}
+
+void* ZopfliRealloc(void* ptr, size_t size) {
+  /* size 0 -> portable free (NULL); ptr NULL -> realloc acts as malloc. */
+  void* result = size == 0 ? (free(ptr), NULL) : realloc(ptr, size);
+  return size != 0 && !result ? ZopfliOutOfMemory(size) : result;
+}
+
+void ZopfliBufPush(ZopfliBuf* b, uint8_t value) {
+  if (b->size == b->cap) {
+    b->cap = b->cap ? ZOPFLI_GROW_CAP(b->cap) : 16;
+    b->data = (uint8_t*)ZopfliRealloc(b->data, b->cap);
+  }
+  b->data[b->size++] = value;
+}
 
 void ZopfliInitOptions(ZopfliOptions* options) {
   options->verbose = 0;

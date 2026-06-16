@@ -27,6 +27,13 @@ Author: jyrki.alakuijala@gmail.com (Jyrki Alakuijala)
 extern "C" {
 #endif
 
+/* Output format */
+typedef enum {
+  ZOPFLI_FORMAT_GZIP,
+  ZOPFLI_FORMAT_ZLIB,
+  ZOPFLI_FORMAT_DEFLATE
+} ZopfliFormat;
+
 /*
 Options used throughout the program.
 */
@@ -65,13 +72,6 @@ typedef struct ZopfliOptions {
 /* Initializes options with default values. */
 void ZopfliInitOptions(ZopfliOptions* options);
 
-/* Output format */
-typedef enum {
-  ZOPFLI_FORMAT_GZIP,
-  ZOPFLI_FORMAT_ZLIB,
-  ZOPFLI_FORMAT_DEFLATE
-} ZopfliFormat;
-
 /*
 Compresses according to the given output format and appends the result to the
 output.
@@ -83,8 +83,8 @@ out: pointer to the dynamic output array to which the result is appended. Must
 outsize: pointer to the dynamic output array size
 */
 void ZopfliCompress(const ZopfliOptions* options, ZopfliFormat output_type,
-                    const unsigned char* in, size_t insize,
-                    unsigned char** out, size_t* outsize);
+                    const uint8_t* in, size_t insize,
+                    uint8_t** out, size_t* outsize);
 
 #ifdef __cplusplus
 }  // extern "C"

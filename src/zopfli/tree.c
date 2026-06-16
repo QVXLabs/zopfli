@@ -30,8 +30,10 @@ Author: afalls@qvxlabs.com (Ardavon Falls)
 
 void ZopfliLengthsToSymbols(const unsigned* lengths, size_t n, unsigned maxbits,
                             unsigned* symbols) {
-  size_t* bl_count = (size_t*)malloc(sizeof(size_t) * (maxbits + 1));
-  size_t* next_code = (size_t*)malloc(sizeof(size_t) * (maxbits + 1));
+  size_t* bl_count =
+      (size_t*)ZopfliRealloc(NULL, sizeof(size_t) * (maxbits + 1));
+  size_t* next_code =
+      (size_t*)ZopfliRealloc(NULL, sizeof(size_t) * (maxbits + 1));
   unsigned bits, i;
   unsigned code;
 
@@ -65,8 +67,8 @@ void ZopfliLengthsToSymbols(const unsigned* lengths, size_t n, unsigned maxbits,
     }
   }
 
-  free(bl_count);
-  free(next_code);
+  ZopfliRealloc(bl_count, 0);
+  ZopfliRealloc(next_code, 0);
 }
 
 /*

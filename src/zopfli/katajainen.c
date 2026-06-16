@@ -25,6 +25,7 @@ Jyrki Katajainen, Alistair Moffat, Andrew Turpin".
 */
 
 #include "katajainen.h"
+#include "util.h"
 #include <assert.h>
 #include <stdlib.h>
 #include <limits.h>
@@ -171,7 +172,7 @@ of weight, so all keys are distinct and the order is unique. Inlined shell sort
 static void SortLeaves(Node* leaves, int num) {
   /* Knuth gaps ((3^k - 1) / 2). Capped at 121: the start gap is < num and num
      <= 288 (ZOPFLI_NUM_LL), so larger gaps never apply. Still correct if not. */
-  static const int kGaps[] = { 1, 4, 13, 40, 121 };
+  static const uint8_t kGaps[] = { 1, 4, 13, 40, 121 };
   int g = (int)(sizeof(kGaps) / sizeof(kGaps[0])) - 1;
   /* Start at the largest gap smaller than num. */
   for (; g > 0 && kGaps[g] >= num; g--) { }
@@ -198,16 +199,14 @@ void ZopfliInitKatajainenScratch(ZopfliKatajainenScratch* scratch) {
 }
 
 void ZopfliCleanKatajainenScratch(ZopfliKatajainenScratch* scratch) {
-  free(scratch->leaves);
-  free(scratch->nodes);
-  free(scratch->lists);
+  ZopfliRealloc(scratch->leaves, 0);
+  ZopfliRealloc(scratch->nodes, 0);
+  ZopfliRealloc(scratch->lists, 0);
 }
 
 static Node* EnsureNodes(void** buf, size_t* cap, size_t need) {
   if (need > *cap) {
-    void* p = realloc(*buf, need * sizeof(Node));
-    if (!p) exit(EXIT_FAILURE);
-    *buf = p;
+    *buf = ZopfliRealloc(*buf, need * sizeof(Node));
     *cap = need;
   }
   return (Node*)*buf;
@@ -285,8 +284,8 @@ int ZopfliLengthLimitedCodeLengthsScratch(
   pool.next = nodes;
 
   if ((size_t)maxbits > scratch->lists_cap) {
-    free(scratch->lists);
-    scratch->lists = malloc((size_t)maxbits * 2 * sizeof(Node*));
+    ZopfliRealloc(scratch->lists, 0);
+    scratch->lists = ZopfliRealloc(NULL, (size_t)maxbits * 2 * sizeof(Node*));
     scratch->lists_cap = scratch->lists ? (size_t)maxbits : 0;
   }
   lists = (Node* (*)[2])scratch->lists;

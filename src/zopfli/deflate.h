@@ -60,8 +60,18 @@ out: pointer to the dynamic output array to which the result is appended. Must
 outsize: pointer to the dynamic output array size.
 */
 void ZopfliDeflate(const ZopfliOptions* options, int btype, int final,
-                   const unsigned char* in, size_t insize,
-                   unsigned char* bp, unsigned char** out, size_t* outsize);
+                   const uint8_t* in, size_t insize,
+                   uint8_t* bp, uint8_t** out, size_t* outsize);
+
+/*
+Like ZopfliDeflate, but appends to a golden-ratio-growing ZopfliBuf instead of an
+(out, outsize) pair. Internal: lets the gzip/zlib containers share one growable
+buffer (and its capacity) with the deflate stream rather than crossing the
+(out, outsize) boundary on every call.
+*/
+void ZopfliDeflateBuf(const ZopfliOptions* options, int btype, int final,
+                      const uint8_t* in, size_t insize,
+                      uint8_t* bp, ZopfliBuf* buf);
 
 /*
 Like ZopfliDeflate, but allows to specify start and end byte with instart and
@@ -69,8 +79,8 @@ inend. Only that part is compressed, but earlier bytes are still used for the
 back window.
 */
 void ZopfliDeflatePart(const ZopfliOptions* options, int btype, int final,
-                       const unsigned char* in, size_t instart, size_t inend,
-                       unsigned char* bp, unsigned char** out,
+                       const uint8_t* in, size_t instart, size_t inend,
+                       uint8_t* bp, uint8_t** out,
                        size_t* outsize);
 
 /*

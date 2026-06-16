@@ -31,24 +31,17 @@ Author: afalls@qvxlabs.com (Ardavon Falls)
 
 void ZopfliInitCache(size_t blocksize, ZopfliLongestMatchCache* lmc) {
   size_t i;
-  lmc->length = (unsigned short*)malloc(sizeof(unsigned short) * blocksize);
-  lmc->dist = (unsigned short*)malloc(sizeof(unsigned short) * blocksize);
-  lmc->run_off = (unsigned*)malloc(sizeof(unsigned) * blocksize);
+  lmc->length = (uint16_t*)ZopfliRealloc(NULL, sizeof(uint16_t) * blocksize);
+  lmc->dist = (uint16_t*)ZopfliRealloc(NULL, sizeof(uint16_t) * blocksize);
+  lmc->run_off = (unsigned*)ZopfliRealloc(NULL, sizeof(unsigned) * blocksize);
   /* Same byte budget as the old fixed cache, used now as a shared run pool. */
   lmc->pool_cap = (size_t)ZOPFLI_CACHE_LENGTH * blocksize;
   lmc->pool_used = 0;
   lmc->all_complete = 1;
-  lmc->pool = (unsigned char*)malloc(3 * lmc->pool_cap);
-  /* blocksize == 0 makes every malloc above a malloc(0), which may return NULL
-  without being an error; nothing below is read for an empty block. Otherwise
-  any NULL is a real allocation failure (length/dist are written just below). */
-  if (blocksize != 0 && (lmc->length == NULL || lmc->dist == NULL ||
-                         lmc->run_off == NULL || lmc->pool == NULL)) {
-    fprintf(stderr,
-        "Error: Out of memory. Tried allocating %zu bytes of memory.\n",
-        3 * lmc->pool_cap);
-    exit (EXIT_FAILURE);
-  }
+  lmc->pool = (uint8_t*)ZopfliRealloc(NULL, 3 * lmc->pool_cap);
+  /* For an empty block (blocksize 0) the arrays above are zero-size and stay
+  NULL; nothing below reads them. Real allocation failures abort inside
+  ZopfliRealloc, so no out-of-memory check is needed here. */
 
   /* length > 0 and dist 0 is invalid combination, which indicates on purpose
   that this cache value is not filled in yet. pool and run_off are intentionally
@@ -60,18 +53,18 @@ void ZopfliInitCache(size_t blocksize, ZopfliLongestMatchCache* lmc) {
 }
 
 void ZopfliCleanCache(ZopfliLongestMatchCache* lmc) {
-  free(lmc->length);
-  free(lmc->dist);
-  free(lmc->pool);
-  free(lmc->run_off);
+  ZopfliRealloc(lmc->length, 0);
+  ZopfliRealloc(lmc->dist, 0);
+  ZopfliRealloc(lmc->pool, 0);
+  ZopfliRealloc(lmc->run_off, 0);
 }
 
-void ZopfliSublenToCache(const unsigned short* sublen,
+void ZopfliSublenToCache(const uint16_t* sublen,
                          size_t pos, size_t length,
                          ZopfliLongestMatchCache* lmc) {
   size_t i;
   size_t nruns = 0;
-  unsigned char* run;
+  uint8_t* run;
 
 #if ZOPFLI_CACHE_LENGTH == 0
   return;
@@ -96,9 +89,9 @@ void ZopfliSublenToCache(const unsigned short* sublen,
   run = &lmc->pool[lmc->pool_used * 3];
   for (i = 3; i <= length; i++) {
     if (i == length || sublen[i] != sublen[i + 1]) {
-      run[0] = (unsigned char)(i - 3);
-      run[1] = sublen[i] % 256;
-      run[2] = (sublen[i] >> 8) % 256;
+      run[0] = (uint8_t)(i - 3);
+      run[1] = sublen[i] & 0xff;
+      run[2] = (sublen[i] >> 8) & 0xff;
       run += 3;
     }
   }
@@ -107,10 +100,10 @@ void ZopfliSublenToCache(const unsigned short* sublen,
 
 void ZopfliCacheToSublen(const ZopfliLongestMatchCache* lmc,
                          size_t pos, size_t length,
-                         unsigned short* sublen) {
+                         uint16_t* sublen) {
   size_t i;
   unsigned prevlength = 0;
-  unsigned char* run;
+  uint8_t* run;
 #if ZOPFLI_CACHE_LENGTH == 0
   return;
 #endif

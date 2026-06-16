@@ -37,6 +37,13 @@ context: for your implementation
 */
 typedef uint32_t FindMinimumFun(size_t i, void* context);
 
+typedef struct SplitCostContext {
+  const ZopfliLZ77Store* lz77;
+  ZopfliKatajainenScratch* scratch;
+  size_t start;
+  size_t end;
+} SplitCostContext;
+
 /*
 Finds minimum of function f(i) where i is of type size_t, f(i) is of type
 uint32_t, i is in range start-end (excluding end).
@@ -113,14 +120,6 @@ static uint32_t EstimateCost(ZopfliKatajainenScratch* scratch,
   return ZopfliCalculateBlockSizeAutoTypeScratch(scratch, lz77, lstart, lend);
 }
 
-typedef struct SplitCostContext {
-  const ZopfliLZ77Store* lz77;
-  ZopfliKatajainenScratch* scratch;
-  size_t start;
-  size_t end;
-} SplitCostContext;
-
-
 /*
 Gets the cost which is the sum of the cost of the left and the right section
 of the data.
@@ -181,7 +180,7 @@ static void PrintBlockSplitPoints(const ZopfliLZ77Store* lz77,
   }
   fprintf(stderr, ")\n");
 
-  free(splitpoints);
+  ZopfliRealloc(splitpoints, 0);
 }
 
 /*
@@ -198,7 +197,7 @@ lend: output variable, giving end of block.
 returns 1 if a block was found, 0 if no block found (all are done).
 */
 static int FindLargestSplittableBlock(
-    size_t lz77size, const unsigned char* done,
+    size_t lz77size, const uint8_t* done,
     const size_t* splitpoints, size_t npoints,
     size_t* lstart, size_t* lend) {
   size_t longest = 0;
@@ -224,7 +223,7 @@ void ZopfliBlockSplitLZ77(const ZopfliOptions* options,
   size_t i;
   size_t llpos = 0;
   size_t numblocks = 1;
-  unsigned char* done;
+  uint8_t* done;
   uint32_t splitcost, origcost;
   /* Reused across all block-size evaluations of this split. */
   ZopfliKatajainenScratch scratch;
@@ -233,8 +232,7 @@ void ZopfliBlockSplitLZ77(const ZopfliOptions* options,
 
   ZopfliInitKatajainenScratch(&scratch);
 
-  done = (unsigned char*)malloc(lz77->size);
-  if (!done) exit(-1); /* Allocation failed. */
+  done = (uint8_t*)ZopfliRealloc(NULL, lz77->size);
   for (i = 0; i < lz77->size; i++) done[i] = 0;
 
   lstart = 0;
@@ -280,11 +278,11 @@ void ZopfliBlockSplitLZ77(const ZopfliOptions* options,
   }
 
   ZopfliCleanKatajainenScratch(&scratch);
-  free(done);
+  ZopfliRealloc(done, 0);
 }
 
 void ZopfliBlockSplit(const ZopfliOptions* options,
-                      const unsigned char* in, size_t instart, size_t inend,
+                      const uint8_t* in, size_t instart, size_t inend,
                       size_t maxblocks, size_t** splitpoints, size_t* npoints) {
   size_t pos = 0;
   size_t i;
@@ -324,13 +322,13 @@ void ZopfliBlockSplit(const ZopfliOptions* options,
   }
   assert(*npoints == nlz77points);
 
-  free(lz77splitpoints);
+  ZopfliRealloc(lz77splitpoints, 0);
   ZopfliCleanBlockState(&s);
   ZopfliCleanLZ77Store(&store);
   ZopfliCleanHash(h);
 }
 
-void ZopfliBlockSplitSimple(const unsigned char* in,
+void ZopfliBlockSplitSimple(const uint8_t* in,
                             size_t instart, size_t inend,
                             size_t blocksize,
                             size_t** splitpoints, size_t* npoints) {

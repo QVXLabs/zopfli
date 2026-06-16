@@ -40,9 +40,9 @@ all_complete clears if a position overflows the pool budget (pathological
 input); those positions fall back to recomputation as over-cap ones did before.
 */
 typedef struct ZopfliLongestMatchCache {
-  unsigned short* length;
-  unsigned short* dist;
-  unsigned char* pool;  /* Shared run pool, 3 bytes per run. */
+  uint16_t* length;
+  uint16_t* dist;
+  uint8_t* pool;  /* Shared run pool, 3 bytes per run. */
   unsigned* run_off;  /* Per pos: first run index in pool, or LMC_NO_SUBLEN. */
   size_t pool_used;  /* Next free run slot. */
   size_t pool_cap;  /* Pool capacity in runs. */
@@ -56,14 +56,14 @@ void ZopfliInitCache(size_t blocksize, ZopfliLongestMatchCache* lmc);
 void ZopfliCleanCache(ZopfliLongestMatchCache* lmc);
 
 /* Stores sublen array in the cache. */
-void ZopfliSublenToCache(const unsigned short* sublen,
+void ZopfliSublenToCache(const uint16_t* sublen,
                          size_t pos, size_t length,
                          ZopfliLongestMatchCache* lmc);
 
 /* Extracts sublen array from the cache. */
 void ZopfliCacheToSublen(const ZopfliLongestMatchCache* lmc,
                          size_t pos, size_t length,
-                         unsigned short* sublen);
+                         uint16_t* sublen);
 
 /* Returns the length up to which could be stored in the cache. */
 unsigned ZopfliMaxCachedSublen(const ZopfliLongestMatchCache* lmc,

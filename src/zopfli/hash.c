@@ -28,23 +28,26 @@ Author: jyrki.alakuijala@gmail.com (Jyrki Alakuijala)
 
 /* Empty/uninitialized 16-bit hash slot. Real positions and hash values are
 <= HASH_MASK (32767), so 0xFFFF can never collide with a valid entry. */
-#define ZOPFLI_HASH_EMPTY ((unsigned short)-1)
+#define ZOPFLI_HASH_EMPTY ((uint16_t)-1)
 
 void ZopfliAllocHash(size_t window_size, ZopfliHash* h) {
   /* head/head2 are indexed by the masked hash value, so only HASH_MASK + 1
   buckets are ever used (not 65536). */
-  h->head = (unsigned short*)malloc(sizeof(*h->head) * (HASH_MASK + 1));
-  h->prev = (unsigned short*)malloc(sizeof(*h->prev) * window_size);
-  h->hashval = (unsigned short*)malloc(sizeof(*h->hashval) * window_size);
+  h->head = (uint16_t*)ZopfliRealloc(NULL, sizeof(*h->head) * (HASH_MASK + 1));
+  h->prev = (uint16_t*)ZopfliRealloc(NULL, sizeof(*h->prev) * window_size);
+  h->hashval =
+      (uint16_t*)ZopfliRealloc(NULL, sizeof(*h->hashval) * window_size);
 
 #ifdef ZOPFLI_HASH_SAME
-  h->same = (unsigned short*)malloc(sizeof(*h->same) * window_size);
+  h->same = (uint16_t*)ZopfliRealloc(NULL, sizeof(*h->same) * window_size);
 #endif
 
 #ifdef ZOPFLI_HASH_SAME_HASH
-  h->head2 = (unsigned short*)malloc(sizeof(*h->head2) * (HASH_MASK + 1));
-  h->prev2 = (unsigned short*)malloc(sizeof(*h->prev2) * window_size);
-  h->hashval2 = (unsigned short*)malloc(sizeof(*h->hashval2) * window_size);
+  h->head2 =
+      (uint16_t*)ZopfliRealloc(NULL, sizeof(*h->head2) * (HASH_MASK + 1));
+  h->prev2 = (uint16_t*)ZopfliRealloc(NULL, sizeof(*h->prev2) * window_size);
+  h->hashval2 =
+      (uint16_t*)ZopfliRealloc(NULL, sizeof(*h->hashval2) * window_size);
 #endif
 }
 
@@ -57,7 +60,7 @@ void ZopfliResetHash(size_t window_size, ZopfliHash* h) {
   }
   for (i = 0; i < window_size; i++) {
     /* If prev[j] == j, then prev[j] is uninitialized. */
-    h->prev[i] = (unsigned short)i;
+    h->prev[i] = (uint16_t)i;
     h->hashval[i] = ZOPFLI_HASH_EMPTY;
   }
 
@@ -73,25 +76,25 @@ void ZopfliResetHash(size_t window_size, ZopfliHash* h) {
     h->head2[i] = ZOPFLI_HASH_EMPTY;
   }
   for (i = 0; i < window_size; i++) {
-    h->prev2[i] = (unsigned short)i;
+    h->prev2[i] = (uint16_t)i;
     h->hashval2[i] = ZOPFLI_HASH_EMPTY;
   }
 #endif
 }
 
 void ZopfliCleanHash(ZopfliHash* h) {
-  free(h->head);
-  free(h->prev);
-  free(h->hashval);
+  ZopfliRealloc(h->head, 0);
+  ZopfliRealloc(h->prev, 0);
+  ZopfliRealloc(h->hashval, 0);
 
 #ifdef ZOPFLI_HASH_SAME_HASH
-  free(h->head2);
-  free(h->prev2);
-  free(h->hashval2);
+  ZopfliRealloc(h->head2, 0);
+  ZopfliRealloc(h->prev2, 0);
+  ZopfliRealloc(h->hashval2, 0);
 #endif
 
 #ifdef ZOPFLI_HASH_SAME
-  free(h->same);
+  ZopfliRealloc(h->same, 0);
 #endif
 }
 
@@ -100,13 +103,13 @@ Update the sliding hash value with the given byte. All calls to this function
 must be made on consecutive input characters. Since the hash value exists out
 of multiple input bytes, a few warmups with this function are needed initially.
 */
-static void UpdateHashValue(ZopfliHash* h, unsigned char c) {
+static void UpdateHashValue(ZopfliHash* h, uint8_t c) {
   h->val = (((h->val) << HASH_SHIFT) ^ (c)) & HASH_MASK;
 }
 
-void ZopfliUpdateHash(const unsigned char* array, size_t pos, size_t end,
+void ZopfliUpdateHash(const uint8_t* array, size_t pos, size_t end,
                 ZopfliHash* h) {
-  unsigned short hpos = pos & ZOPFLI_WINDOW_MASK;
+  uint16_t hpos = pos & ZOPFLI_WINDOW_MASK;
 #ifdef ZOPFLI_HASH_SAME
   size_t amount = 0;
 #endif
@@ -127,10 +130,10 @@ void ZopfliUpdateHash(const unsigned char* array, size_t pos, size_t end,
     amount = h->same[(pos - 1) & ZOPFLI_WINDOW_MASK] - 1;
   }
   while (pos + amount + 1 < end &&
-      array[pos] == array[pos + amount + 1] && amount < (unsigned short)(-1)) {
+      array[pos] == array[pos + amount + 1] && amount < (uint16_t)(-1)) {
     amount++;
   }
-  h->same[hpos] = (unsigned short)amount;
+  h->same[hpos] = (uint16_t)amount;
 #endif
 
 #ifdef ZOPFLI_HASH_SAME_HASH
@@ -145,7 +148,7 @@ void ZopfliUpdateHash(const unsigned char* array, size_t pos, size_t end,
 #endif
 }
 
-void ZopfliWarmupHash(const unsigned char* array, size_t pos, size_t end,
+void ZopfliWarmupHash(const uint8_t* array, size_t pos, size_t end,
                 ZopfliHash* h) {
   UpdateHashValue(h, array[pos + 0]);
   if (pos + 1 < end) UpdateHashValue(h, array[pos + 1]);
