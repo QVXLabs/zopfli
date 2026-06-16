@@ -21,6 +21,7 @@ Author: jyrki.alakuijala@gmail.com (Jyrki Alakuijala)
 #define ZOPFLI_ZOPFLI_H_
 
 #include <stddef.h>
+#include <stdint.h> /* for uint8_t */
 #include <stdlib.h> /* for size_t */
 
 #ifdef __cplusplus
