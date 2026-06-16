@@ -26,6 +26,7 @@ basic deflate specification values and generic program options.
 #ifndef ZOPFLI_UTIL_H_
 #define ZOPFLI_UTIL_H_
 
+#include <limits.h>
 #include <stdint.h>
 #include <string.h>
 #include <stdlib.h>
@@ -48,6 +49,17 @@ uses the _BitScanReverse intrinsic (anything else falls back to a loop). */
 #endif
 #if !defined(ZOPFLI_HAS_BUILTIN_CLZ) && defined(_MSC_VER)
 # include <intrin.h>
+#endif
+
+/* Native machine word width, used to size GetMatch's word-at-a-time scan.
+ZOPFLI_NATIVE_64BIT when size_t is 64-bit, ZOPFLI_NATIVE_32BIT when unsigned int
+is 32-bit, ZOPFLI_NATIVE_16BIT when it is 16-bit; smaller targets define none. */
+#if SIZE_MAX == 0xFFFFFFFFFFFFFFFFu
+# define ZOPFLI_NATIVE_64BIT 1
+#elif UINT_MAX == 0xFFFFFFFFu
+# define ZOPFLI_NATIVE_32BIT 1
+#elif UINT_MAX == 0xFFFFu
+# define ZOPFLI_NATIVE_16BIT 1
 #endif
 
 /* Minimum and maximum length that can be encoded in deflate. */
@@ -97,16 +109,6 @@ exceeds any real value; same value on every platform. Only ever compared, never
 added, so it cannot overflow.
 */
 #define ZOPFLI_LARGE_COST UINT32_MAX
-
-/*
-Integer type for the squeeze optimal-parse cost accumulator. Kept 32-bit so the
-hot per-byte costs[] array and its add/compare stay single-word, which matters
-on 32-bit processors. `int` is 32-bit on every ILP32 and LP64 target of
-interest, so no width detection is needed. Costs are stored in fixed point with
-a per-block shift (see squeeze.c); the shift is chosen so the worst-case
-accumulated cost cannot overflow this type.
-*/
-typedef int ZopfliCost;
 
 /*
 For longest match cache. max 256. Uses huge amounts of memory but makes it
@@ -165,10 +167,16 @@ varies from file to file.
 #define ZOPFLI_LAZY_MATCHING
 
 /* Integer min and absolute difference. Function-like macros so they work for
-any integer type used in the hot path (int/size_t/unsigned/unsigned short)
+any integer type used in the hot path (int/size_t/unsigned/uint16_t)
 without truncation. Args are evaluated twice: pass side-effect-free operands. */
 #define ZOPFLI_MIN(a, b) ((a) < (b) ? (a) : (b))
 #define ZOPFLI_ABS_DIFF(x, y) ((x) > (y) ? (x) - (y) : (y) - (x))
+
+/* Next capacity for a growing buffer: ~1.6x (golden-ratio family, < 2 so a good
+allocator can reuse previously freed blocks, lowering peak memory). All size_t
+(no 32-bit truncation) and overflow-safe; the +1 guarantees progress from tiny
+capacities. */
+#define ZOPFLI_GROW_CAP(cap) ((cap) + ((cap) >> 1) + ((cap) >> 3) + 1)
 
 /*
 Appends value to dynamically allocated memory, doubling its allocation size
@@ -182,27 +190,61 @@ Precondition: allocated size of data is at least a power of two greater than or
 equal than *size.
 */
 #ifdef __cplusplus /* C++ cannot assign void* from malloc to *data */
-#define ZOPFLI_APPEND_DATA(/* T */ value, /* T** */ data, /* size_t* */ size) {\
+#define ZOPFLI_APPEND_DATA(ctx, /* T */ value, /* T** */ data, \
+                           /* size_t* */ size) {\
   if (!((*size) & ((*size) - 1))) {\
     /*double alloc size if it's a power of two*/\
     void** data_void = reinterpret_cast<void**>(data);\
-    *data_void = (*size) == 0 ? malloc(sizeof(**data))\
-                              : realloc((*data), (*size) * 2 * sizeof(**data));\
+    *data_void = (*size) == 0 ? ZopfliRealloc(ctx, NULL, sizeof(**data))\
+                  : ZopfliRealloc(ctx, (*data), (*size) * 2 * sizeof(**data));\
   }\
   (*data)[(*size)] = (value);\
   (*size)++;\
 }
 #else /* C gives problems with strict-aliasing rules for (void**) cast */
-#define ZOPFLI_APPEND_DATA(/* T */ value, /* T** */ data, /* size_t* */ size) {\
+#define ZOPFLI_APPEND_DATA(ctx, /* T */ value, /* T** */ data, \
+                           /* size_t* */ size) {\
   if (!((*size) & ((*size) - 1))) {\
     /*double alloc size if it's a power of two*/\
-    (*data) = (*size) == 0 ? malloc(sizeof(**data))\
-                           : realloc((*data), (*size) * 2 * sizeof(**data));\
+    (*data) = (*size) == 0 ? ZopfliRealloc(ctx, NULL, sizeof(**data))\
+                  : ZopfliRealloc(ctx, (*data), (*size) * 2 * sizeof(**data));\
   }\
   (*data)[(*size)] = (value);\
   (*size)++;\
 }
 #endif
+
+/* The native machine word as an exact-width unsigned type (selected by the
+ZOPFLI_NATIVE_* width macros above). */
+#if defined(ZOPFLI_NATIVE_64BIT)
+typedef uint64_t ZopfliNativeWord;
+#elif defined(ZOPFLI_NATIVE_32BIT)
+typedef uint32_t ZopfliNativeWord;
+#elif defined(ZOPFLI_NATIVE_16BIT)
+typedef uint16_t ZopfliNativeWord;
+#else
+typedef uint8_t ZopfliNativeWord;
+#endif
+
+/*
+Integer type for the squeeze optimal-parse cost accumulator. Kept 32-bit so the
+hot per-byte costs[] array and its add/compare stay single-word, which matters
+on 32-bit processors. `int` is 32-bit on every ILP32 and LP64 target of
+interest, so no width detection is needed. Costs are stored in fixed point with
+a per-block shift (see squeeze.c); the shift is chosen so the worst-case
+accumulated cost cannot overflow this type.
+*/
+typedef int ZopfliCost;
+
+/* Growable byte buffer: capacity tracked explicitly so it grows at the golden
+ratio (ZOPFLI_GROW_CAP) rather than doubling, and can be reset (size = 0) and
+reused without reallocating. The output stream uses this internally; public APIs
+keep the (out, outsize) pair via adopt/publish at the boundary. */
+typedef struct ZopfliBuf {
+  uint8_t* data;
+  size_t size;
+  size_t cap;
+} ZopfliBuf;
 
 /* Number of leading zero bits in a 32-bit value; x must be nonzero. */
 ZOPFLI_INLINE int ZopfliCLZ32(uint32_t x) {
@@ -218,5 +260,25 @@ ZOPFLI_INLINE int ZopfliCLZ32(uint32_t x) {
   return n;
 #endif
 }
+
+/* Forward typedef: the body of ZopfliContext lives in context.h. Allocation
+routes through ctx's allocator hook; a NULL ctx uses the standard library. */
+typedef struct ZopfliContext ZopfliContext;
+
+/* Appends one byte, growing by the golden ratio when full. */
+void ZopfliBufPush(const ZopfliContext* ctx, ZopfliBuf* b, uint8_t value);
+
+/* Default allocator (plain realloc/free) installed into options->zrealloc by
+ZopfliInitOptions. size 0 frees ptr -> NULL (portable, unlike realloc(ptr, 0));
+ptr NULL allocates. Exposed so embedders can wrap it. */
+void* ZopfliDefaultRealloc(void* alloc_context, void* ptr, size_t size);
+
+/* Default-allocator context for allocations outside any caller options. */
+const ZopfliContext* ZopfliDefaultContext(void);
+
+/* Single allocation primitive (malloc/realloc/free unified). size 0 frees ptr,
+ptr NULL allocates. Routes through ctx->options->zrealloc; ctx must be non-NULL
+(use ZopfliDefaultContext when there are no options). Aborts on real OOM. */
+void* ZopfliRealloc(const ZopfliContext* ctx, void* ptr, size_t size);
 
 #endif  /* ZOPFLI_UTIL_H_ */

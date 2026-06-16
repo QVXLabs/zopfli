@@ -56,7 +56,7 @@ ZOPFLI_INLINE int ZopfliGetDistSymbol(int dist) {
 
 /* Gets the amount of extra bits for the given length, cfr. the DEFLATE spec. */
 ZOPFLI_INLINE int ZopfliGetLengthExtraBits(int l) {
-  static const int table[259] = {
+  static const uint8_t table[259] = {
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1,
     2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
     3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
@@ -79,7 +79,7 @@ ZOPFLI_INLINE int ZopfliGetLengthExtraBits(int l) {
 
 /* Gets value of the extra bits for the given length, cfr. the DEFLATE spec. */
 ZOPFLI_INLINE int ZopfliGetLengthExtraBitsValue(int l) {
-  static const int table[259] = {
+  static const uint8_t table[259] = {
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 2, 3, 0,
     1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 4, 5, 6, 7, 0, 1, 2, 3, 4, 5,
     6, 7, 0, 1, 2, 3, 4, 5, 6, 7, 0, 1, 2, 3, 4, 5, 6, 7, 0, 1, 2, 3, 4, 5, 6,
@@ -101,7 +101,7 @@ Gets the symbol for the given length, cfr. the DEFLATE spec.
 Returns the symbol in the range [257-285] (inclusive)
 */
 ZOPFLI_INLINE int ZopfliGetLengthSymbol(int l) {
-  static const int table[259] = {
+  static const uint16_t table[259] = {
     0, 0, 0, 257, 258, 259, 260, 261, 262, 263, 264,
     265, 265, 266, 266, 267, 267, 268, 268,
     269, 269, 269, 269, 270, 270, 270, 270,
@@ -140,7 +140,7 @@ ZOPFLI_INLINE int ZopfliGetLengthSymbol(int l) {
 
 /* Gets the amount of extra bits for the given length symbol. */
 ZOPFLI_INLINE int ZopfliGetLengthSymbolExtraBits(int s) {
-  static const int table[29] = {
+  static const uint8_t table[29] = {
     0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2,
     3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0
   };
@@ -149,7 +149,7 @@ ZOPFLI_INLINE int ZopfliGetLengthSymbolExtraBits(int s) {
 
 /* Gets the amount of extra bits for the given distance symbol. */
 ZOPFLI_INLINE int ZopfliGetDistSymbolExtraBits(int s) {
-  static const int table[30] = {
+  static const uint8_t table[30] = {
     0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8,
     9, 9, 10, 10, 11, 11, 12, 12, 13, 13
   };

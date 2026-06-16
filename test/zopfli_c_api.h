@@ -8,6 +8,7 @@
 extern "C" {
 #include "zopfli.h"
 #include "util.h"
+#include "context.h"
 #include "deflate.h"
 #include "lz77.h"
 #include "squeeze.h"
@@ -61,13 +62,15 @@ inline void GreedyStore(const std::vector<unsigned char>& in,
                         ZopfliLZ77Store* store) {
   ZopfliOptions options;
   ZopfliInitOptions(&options);
+  ZopfliContext ctx;
+  ctx.options = options;
   ZopfliBlockState s;
-  ZopfliInitBlockState(&options, 0, in.size(), 1, &s);
+  ZopfliInitBlockState(&ctx, 0, in.size(), 1, &s);
   ZopfliHash h;
-  ZopfliAllocHash(ZOPFLI_WINDOW_SIZE, &h);
+  ZopfliAllocHash(&ctx, ZOPFLI_WINDOW_SIZE, &h);
   ZopfliInitLZ77Store(in.data(), store);
   ZopfliLZ77Greedy(&s, in.data(), 0, in.size(), store, &h);
-  ZopfliCleanHash(&h);
+  ZopfliCleanHash(&ctx, &h);
   ZopfliCleanBlockState(&s);
 }
 

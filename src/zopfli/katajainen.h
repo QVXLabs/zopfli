@@ -23,6 +23,8 @@ Author: afalls@qvxlabs.com (Ardy123)
 
 #include <string.h>
 
+#include "util.h"  /* ZopfliContext (forward typedef) for the allocator */
+
 /*
 Reusable scratch buffers for ZopfliLengthLimitedCodeLengths, so the hot
 per-block-evaluation path does not malloc/free on every call. Owned by the
@@ -40,7 +42,8 @@ typedef struct ZopfliKatajainenScratch {
 } ZopfliKatajainenScratch;
 
 void ZopfliInitKatajainenScratch(ZopfliKatajainenScratch* scratch);
-void ZopfliCleanKatajainenScratch(ZopfliKatajainenScratch* scratch);
+void ZopfliCleanKatajainenScratch(const ZopfliContext* ctx,
+                                  ZopfliKatajainenScratch* scratch);
 
 /*
 Outputs minimum-redundancy length-limited code bitlengths for symbols with the
@@ -57,7 +60,8 @@ bitlengths: Output, the bitlengths for the symbol prefix codes.
 return: 0 for OK, non-0 for error.
 */
 int ZopfliLengthLimitedCodeLengths(
-    const size_t* frequencies, int n, int maxbits, unsigned* bitlengths);
+    const ZopfliContext* ctx, const size_t* frequencies, int n, int maxbits,
+    unsigned* bitlengths);
 
 /*
 As ZopfliLengthLimitedCodeLengths, but reuses caller-owned scratch buffers
@@ -65,7 +69,7 @@ instead of allocating per call. Thread-safe as long as each thread passes its
 own scratch.
 */
 int ZopfliLengthLimitedCodeLengthsScratch(
-    ZopfliKatajainenScratch* scratch,
+    const ZopfliContext* ctx, ZopfliKatajainenScratch* scratch,
     const size_t* frequencies, int n, int maxbits, unsigned* bitlengths);
 
 #endif  /* ZOPFLI_KATAJAINEN_H_ */

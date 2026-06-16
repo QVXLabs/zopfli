@@ -23,10 +23,11 @@ Author: afalls@qvxlabs.com (Ardy123)
 
 #include <stdio.h>
 
+#include "context.h"
 #include "deflate.h"
 
 /* CRC polynomial: 0xedb88320 */
-static const unsigned long crc32_table[256] = {
+static const uint32_t crc32_table[256] = {
            0u, 1996959894u, 3993919788u, 2567524794u,  124634137u, 1886057615u,
   3915621685u, 2657392035u,  249268274u, 2044508324u, 3772115230u, 2547177864u,
    162941995u, 2125561021u, 3887607047u, 2428444049u,  498536548u, 1789927666u,
@@ -73,8 +74,8 @@ static const unsigned long crc32_table[256] = {
 };
 
 /* Returns the CRC32 */
-static unsigned long CRC(const unsigned char* data, size_t size) {
-  unsigned long result = 0xffffffffu;
+static uint32_t CRC(const uint8_t* data, size_t size) {
+  uint32_t result = 0xffffffffu;
   for (; size > 0; size--) {
     result = crc32_table[(result ^ *(data++)) & 0xff] ^ (result >> 8);
   }
@@ -83,38 +84,48 @@ static unsigned long CRC(const unsigned char* data, size_t size) {
 
 /* Compresses the data according to the gzip specification, RFC 1952. */
 void ZopfliGzipCompress(const ZopfliOptions* options,
-                        const unsigned char* in, size_t insize,
-                        unsigned char** out, size_t* outsize) {
-  unsigned long crcvalue = CRC(in, insize);
-  unsigned char bp = 0;
+                        const uint8_t* in, size_t insize,
+                        uint8_t** out, size_t* outsize) {
+  uint32_t crcvalue = CRC(in, insize);
+  uint8_t bp = 0;
+  ZopfliContext ctx;
+  ZopfliBuf buf;
 
-  ZOPFLI_APPEND_DATA(31, out, outsize);  /* ID1 */
-  ZOPFLI_APPEND_DATA(139, out, outsize);  /* ID2 */
-  ZOPFLI_APPEND_DATA(8, out, outsize);  /* CM */
-  ZOPFLI_APPEND_DATA(0, out, outsize);  /* FLG */
+  ctx.options = *options;
+  buf.data = *out;
+  buf.size = *outsize;
+  buf.cap = *outsize;
+
+  ZopfliBufPush(&ctx, &buf, 31);  /* ID1 */
+  ZopfliBufPush(&ctx, &buf, 139);  /* ID2 */
+  ZopfliBufPush(&ctx, &buf, 8);  /* CM */
+  ZopfliBufPush(&ctx, &buf, 0);  /* FLG */
   /* MTIME */
-  ZOPFLI_APPEND_DATA(0, out, outsize);
-  ZOPFLI_APPEND_DATA(0, out, outsize);
-  ZOPFLI_APPEND_DATA(0, out, outsize);
-  ZOPFLI_APPEND_DATA(0, out, outsize);
+  ZopfliBufPush(&ctx, &buf, 0);
+  ZopfliBufPush(&ctx, &buf, 0);
+  ZopfliBufPush(&ctx, &buf, 0);
+  ZopfliBufPush(&ctx, &buf, 0);
 
-  ZOPFLI_APPEND_DATA(2, out, outsize);  /* XFL, 2 indicates best compression. */
-  ZOPFLI_APPEND_DATA(3, out, outsize);  /* OS follows Unix conventions. */
+  ZopfliBufPush(&ctx, &buf, 2);  /* XFL, 2 indicates best compression. */
+  ZopfliBufPush(&ctx, &buf, 3);  /* OS follows Unix conventions. */
 
-  ZopfliDeflate(options, 2 /* Dynamic block */, 1,
-                in, insize, &bp, out, outsize);
+  ZopfliDeflateBuf(options, 2 /* Dynamic block */, 1,
+                   in, insize, &bp, &buf);
 
   /* CRC */
-  ZOPFLI_APPEND_DATA(crcvalue % 256, out, outsize);
-  ZOPFLI_APPEND_DATA((crcvalue >> 8) % 256, out, outsize);
-  ZOPFLI_APPEND_DATA((crcvalue >> 16) % 256, out, outsize);
-  ZOPFLI_APPEND_DATA((crcvalue >> 24) % 256, out, outsize);
+  ZopfliBufPush(&ctx, &buf, (uint8_t)(crcvalue & 0xff));
+  ZopfliBufPush(&ctx, &buf, (uint8_t)((crcvalue >> 8) & 0xff));
+  ZopfliBufPush(&ctx, &buf, (uint8_t)((crcvalue >> 16) & 0xff));
+  ZopfliBufPush(&ctx, &buf, (uint8_t)((crcvalue >> 24) & 0xff));
 
   /* ISIZE */
-  ZOPFLI_APPEND_DATA(insize % 256, out, outsize);
-  ZOPFLI_APPEND_DATA((insize >> 8) % 256, out, outsize);
-  ZOPFLI_APPEND_DATA((insize >> 16) % 256, out, outsize);
-  ZOPFLI_APPEND_DATA((insize >> 24) % 256, out, outsize);
+  ZopfliBufPush(&ctx, &buf, (uint8_t)(insize & 0xff));
+  ZopfliBufPush(&ctx, &buf, (uint8_t)((insize >> 8) & 0xff));
+  ZopfliBufPush(&ctx, &buf, (uint8_t)((insize >> 16) & 0xff));
+  ZopfliBufPush(&ctx, &buf, (uint8_t)((insize >> 24) & 0xff));
+
+  *out = buf.data;
+  *outsize = buf.size;
 
   if (options->verbose) {
     /* Percent removed with 2 decimals, integer-only (basis points). */

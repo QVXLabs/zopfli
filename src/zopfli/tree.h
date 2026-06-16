@@ -34,22 +34,23 @@ Utilities for creating and using Huffman trees.
 Calculates the bitlengths for the Huffman tree, based on the counts of each
 symbol.
 */
-void ZopfliCalculateBitLengths(const size_t* count, size_t n, int maxbits,
-                               unsigned *bitlengths);
+void ZopfliCalculateBitLengths(const ZopfliContext* ctx, const size_t* count,
+                               size_t n, int maxbits, unsigned *bitlengths);
 
 /*
 As ZopfliCalculateBitLengths, but reuses caller-owned scratch (thread-safe when
 each thread passes its own).
 */
-void ZopfliCalculateBitLengthsScratch(ZopfliKatajainenScratch* scratch,
+void ZopfliCalculateBitLengthsScratch(const ZopfliContext* ctx,
+                                      ZopfliKatajainenScratch* scratch,
                                       const size_t* count, size_t n, int maxbits,
                                       unsigned *bitlengths);
 
 /*
 Converts a series of Huffman tree bitlengths, to the bit values of the symbols.
 */
-void ZopfliLengthsToSymbols(const unsigned* lengths, size_t n, unsigned maxbits,
-                            unsigned* symbols);
+void ZopfliLengthsToSymbols(const ZopfliContext* ctx, const unsigned* lengths,
+                            size_t n, unsigned maxbits, unsigned* symbols);
 
 /*
 Calculates the entropy (ideal bit length) of each symbol from its count, as

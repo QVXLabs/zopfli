@@ -54,7 +54,7 @@ TEST(BlockSplitter, SplitLZ77RespectsMaxBlocks) {
   EXPECT_LE(npoints, maxblocks - 1);
 
   free(splitpoints);
-  ZopfliCleanLZ77Store(&store);
+  ZopfliCleanLZ77Store(ZopfliDefaultContext(), &store);
 }
 
 }  // namespace
