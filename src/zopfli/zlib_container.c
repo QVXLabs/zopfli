@@ -18,7 +18,7 @@ Author: jyrki.alakuijala@gmail.com (Jyrki Alakuijala)
 Author: afalls@qvxlabs.com (Ardy123)
 */
 
-#include "zlib_container.h"
+#include "zopfli.h"
 #include "util.h"
 
 #include <stdio.h>
