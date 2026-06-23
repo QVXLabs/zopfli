@@ -15,7 +15,7 @@ Use the `ZopfliInitOptions` function to place the default values in the
 `ZopfliCompress` supports deflate, gzip and zlib output format with a parameter.
 To support only one individual format, you can instead use `ZopfliDeflate`,
 `ZopfliZlibCompress` or `ZopfliGzipCompress` — all declared, alongside
-`ZopfliCompress`, in `zopfli.h`.
+`ZopfliCompress`, in `<zopfli/zopfli.h>`.
 
 `ZopfliDeflate` creates a valid deflate stream in memory, see:
 http://www.ietf.org/rfc/rfc1951.txt
