@@ -1,8 +1,9 @@
 CC ?= gcc
 CXX ?= g++
 
-VERSION_MAJOR := 1
-VERSION := $(VERSION_MAJOR).0.5
+# Single source of truth: the repo-root VERSION file.
+VERSION := $(strip $(shell cat VERSION))
+VERSION_MAJOR := $(word 1,$(subst ., ,$(VERSION)))
 
 # Shared-library naming differs by linker: GNU ld uses -soname and
 # libfoo.so.VERSION; Apple ld uses -install_name and libfoo.VERSION.dylib.
@@ -26,6 +27,18 @@ override CFLAGS := -W -Wall -Wextra -std=gnu99 -pedantic -O3 -DNDEBUG -fPIC $(CF
 override CXXFLAGS := -W -Wall -Wextra -std=gnu++11 -pedantic -O3 -DNDEBUG -fPIC $(CXXFLAGS)
 LDLIBS := $(LDLIBS)
 
+# Keep `all` the default goal: the version-header rule below would otherwise
+# become the first target and steal it.
+.DEFAULT_GOAL := all
+
+# Generated version header (ZOPFLI_VERSION), built into the obj/ artifact dir.
+GEN_HEADER := obj/version.h
+override CPPFLAGS := -Iobj $(CPPFLAGS)
+
+$(GEN_HEADER): src/zopfli/version.h.in VERSION
+	@mkdir -p obj
+	sed 's/@ZOPFLI_VERSION@/$(VERSION)/g' $< > $@
+
 ZOPFLILIB_SRC = src/zopfli/blocksplitter.c src/zopfli/cache.c\
                 src/zopfli/deflate.c src/zopfli/gzip_container.c\
                 src/zopfli/hash.c src/zopfli/katajainen.c\
@@ -41,6 +54,11 @@ ZOPFLIPNGLIB_SRC := src/zopflipng/zopflipng_lib.cc
 ZOPFLIPNGLIB_OBJ := $(patsubst %.cc,obj/%.o,$(ZOPFLIPNGLIB_SRC))
 ZOPFLIPNGBIN_SRC := src/zopflipng/zopflipng_bin.cc
 ZOPFLIPNGBIN_OBJ := $(patsubst %.cc,obj/%.o,$(ZOPFLIPNGBIN_SRC))
+
+# Objects that include zopfli.h need the generated version header first
+# (LodePNG excluded — it doesn't include zopfli.h).
+$(ZOPFLILIB_OBJ) $(ZOPFLIBIN_OBJ) $(ZOPFLIPNGLIB_OBJ) $(ZOPFLIPNGBIN_OBJ): \
+	$(GEN_HEADER)
 
 .PHONY: all libzopfli libzopflipng
 
@@ -85,4 +103,4 @@ libzopflipng.a: $(LODEPNG_OBJ) $(ZOPFLIPNGLIB_OBJ)
 
 # Remove all libraries and binaries
 clean:
-	rm -f zopflipng zopfli $(ZOPFLILIB_OBJ) $(ZOPFLIBIN_OBJ) $(LODEPNG_OBJ) $(ZOPFLIPNGLIB_OBJ) $(ZOPFLIPNGBIN_OBJ) libzopfli*
+	rm -f zopflipng zopfli $(ZOPFLILIB_OBJ) $(ZOPFLIBIN_OBJ) $(LODEPNG_OBJ) $(ZOPFLIPNGLIB_OBJ) $(ZOPFLIPNGBIN_OBJ) $(GEN_HEADER) libzopfli*
