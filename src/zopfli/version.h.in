@@ -1,0 +1,6 @@
+/* Generated from version.h.in — do not edit. Version lives in the repo-root
+   VERSION file, substituted at build time. */
+#ifndef ZOPFLI_VERSION_H_
+#define ZOPFLI_VERSION_H_
+#define ZOPFLI_VERSION "@ZOPFLI_VERSION@"
+#endif  /* ZOPFLI_VERSION_H_ */
