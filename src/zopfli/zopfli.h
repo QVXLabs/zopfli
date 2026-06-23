@@ -127,7 +127,7 @@ void ZopfliZlibCompress(const ZopfliOptions* options,
                         uint8_t** out, size_t* outsize);
 
 /*
-Compresses according to the deflate specification and append the compressed
+Compresses according to the deflate specification and appends the compressed
 result to the output.
 This function will usually output multiple deflate blocks. If final is 1, then
 the final bit will be set on the last block.
