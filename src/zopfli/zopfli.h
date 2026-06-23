@@ -15,6 +15,7 @@ limitations under the License.
 
 Author: lode.vandevenne@gmail.com (Lode Vandevenne)
 Author: jyrki.alakuijala@gmail.com (Jyrki Alakuijala)
+Author: afalls@qvxlabs.com (Ardy123)
 */
 
 #ifndef ZOPFLI_ZOPFLI_H_
@@ -23,6 +24,8 @@ Author: jyrki.alakuijala@gmail.com (Jyrki Alakuijala)
 #include <stddef.h>
 #include <stdint.h> /* for uint8_t */
 #include <stdlib.h> /* for size_t */
+
+#include "version.h"  /* ZOPFLI_VERSION (generated) */
 
 #ifdef __cplusplus
 extern "C" {

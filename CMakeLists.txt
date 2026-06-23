@@ -1,6 +1,20 @@
 cmake_minimum_required(VERSION 3.10)
 
-project(Zopfli VERSION 1.0.5 LANGUAGES C CXX)
+# Single source of truth for the version: the repo-root VERSION file.
+# CONFIGURE_DEPENDS re-runs CMake when it changes (file(READ) isn't auto-tracked).
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+  ${CMAKE_CURRENT_SOURCE_DIR}/VERSION)
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" ZOPFLI_VERSION)
+string(STRIP "${ZOPFLI_VERSION}" ZOPFLI_VERSION)
+
+project(Zopfli VERSION ${ZOPFLI_VERSION} LANGUAGES C CXX)
+
+# Generate the public version header into the build tree (not the source tree).
+set(ZOPFLI_GENERATED_DIR ${CMAKE_CURRENT_BINARY_DIR}/generated/zopfli)
+configure_file(
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/zopfli/version.h.in
+  ${ZOPFLI_GENERATED_DIR}/version.h
+  @ONLY)
 
 # C99 for <stdint.h> (fixed-width cost types). The default would usually be new
 # enough, but pin it so the dependency is explicit.
@@ -53,6 +67,8 @@ add_library(libzopfli
   src/zopfli/zopfli_lib.c
 )
 target_include_directories(libzopfli
+  PUBLIC
+    $<BUILD_INTERFACE:${ZOPFLI_GENERATED_DIR}>
   INTERFACE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/zopfli>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
@@ -186,6 +202,7 @@ if(BUILD_TESTING)
     test/squeeze_test.cc
     test/fixedpoint_range_test.cc
     test/custom_allocator_test.cc
+    test/version_test.cc
   )
   target_link_libraries(zopfli_tests PRIVATE libzopfli GTest::gtest_main)
   set_target_properties(zopfli_tests PROPERTIES
@@ -214,7 +231,10 @@ install(TARGETS libzopfli libzopflipng zopfli zopflipng
   ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )
 install(FILES src/zopfli/zopfli.h src/zopflipng/zopflipng_lib.h
-  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/zopfli
+)
+install(FILES ${ZOPFLI_GENERATED_DIR}/version.h
+  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/zopfli
 )
 
 # Install config file package
