@@ -101,7 +101,7 @@ void ZopfliCompress(const ZopfliOptions* options, ZopfliFormat output_type,
                     uint8_t** out, size_t* outsize);
 
 /*
-Compresses according to the gzip specification and append the compressed
+Compresses according to the gzip specification and appends the compressed
 result to the output.
 
 options: global program options
