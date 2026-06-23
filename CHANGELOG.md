@@ -24,6 +24,12 @@ changes go under a new top section as they land.
 - Default `numiterations` (0) now auto-scales with input size.
 - Public headers install under `include/zopfli/`; consumers include
   `<zopfli/zopfli.h>` (was `<zopfli.h>`).
+- Consolidated the public compression entry points: `ZopfliGzipCompress`,
+  `ZopfliZlibCompress`, `ZopfliDeflate`, and `ZopfliDeflatePart` are now declared
+  in `zopfli.h` (the main installed public header) so installed consumers can
+  reach the per-format functions, not just `ZopfliCompress`. Removed
+  `gzip_container.h` and `zlib_container.h`; `deflate.h` now declares only
+  internal deflate helpers.
 
 ### Fixed
 - Minor CLI tool bug; assorted correctness fixes (MSVC build, review findings).
