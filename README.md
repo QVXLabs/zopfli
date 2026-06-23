@@ -4,13 +4,35 @@
 [![macOS](https://github.com/QVXLabs/zopfli/actions/workflows/macos.yml/badge.svg)](https://github.com/QVXLabs/zopfli/actions/workflows/macos.yml)
 [![Windows](https://github.com/QVXLabs/zopfli/actions/workflows/windows.yml/badge.svg)](https://github.com/QVXLabs/zopfli/actions/workflows/windows.yml)
 
-Zopfli Compression Algorithm is a compression library programmed in C to perform
-very good, but slow, deflate or zlib compression.
+An **actively maintained** fork of
+[google/zopfli](https://github.com/google/zopfli), which was archived (made
+read-only) in October 2025. Zopfli produces very good — but slow — DEFLATE /
+zlib / gzip compression; the output is standard and decompresses with any zlib
+or gzip library.
 
-The basic function to compress data is `ZopfliCompress` in `zopfli.h`. Use the
-`ZopfliOptions` object to set parameters that affect the speed and compression.
-Use the `ZopfliInitOptions` function to place the default values in the
-`ZopfliOptions` first.
+This fork is a **drop-in replacement** that is faster, leaner, and
+deterministic:
+
+- **~1.9× faster** on text and **~2.5–3.5× faster** on incompressible data at a
+  matched iteration count.
+- **34–38% lower** peak memory.
+- **Bit-identical output across every CPU, compiler, and floating-point mode**,
+  with no `libm`/FPU dependency — it runs on FPU-less microcontrollers. (Upstream
+  zopfli's output varies by platform.)
+
+Output is a valid DEFLATE/zlib/gzip stream but is **not** byte-identical to
+upstream zopfli — it defines a new, platform-independent canonical encoding. See
+[Modifications from Stock Zopfli](#modifications-from-stock-zopfli) for the full
+numbers and [Migrating from google/zopfli](#migrating-from-googlezopfli) before
+you switch.
+
+> **Maintenance status:** actively maintained following upstream's archival. Bug
+> reports, fixes, and PRs are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
+
+The basic function to compress data is `ZopfliCompress` in `<zopfli/zopfli.h>`.
+Use the `ZopfliOptions` object to set parameters that affect the speed and
+compression. Use the `ZopfliInitOptions` function to place the default values in
+the `ZopfliOptions` first.
 
 `ZopfliCompress` supports deflate, gzip and zlib output format with a parameter.
 To support only one individual format, you can instead use `ZopfliDeflate`,
@@ -30,6 +52,26 @@ libraries can decompress the data.
 The source code of Zopfli is under `src/zopfli`. `zopfli_bin.c` is separate from
 the library and contains an example program to create very well compressed gzip
 files.
+
+## Migrating from google/zopfli
+
+Two things differ from upstream when you switch; nothing else in your pipeline
+needs to change.
+
+- **Include path.** Public headers install under `include/zopfli/`, so consumers
+  include `<zopfli/zopfli.h>` (was `<zopfli.h>`). The per-format entry points
+  (`ZopfliGzipCompress`, `ZopfliZlibCompress`, `ZopfliDeflate`,
+  `ZopfliDeflatePart`) are all declared there now — the separate
+  `gzip_container.h` / `zlib_container.h` headers were removed.
+- **Output is not byte-identical to upstream.** It is a valid DEFLATE/zlib/gzip
+  stream any decoder reads, and it is reproducible across platforms — but if you
+  compare against stored golden files produced by upstream zopfli, they will not
+  match. Regenerate any such fixtures from this fork. Compression ratio is within
+  ~0.02% of upstream (sometimes better).
+
+The CLI flags (`zopfli`, `zopflipng`) are unchanged, except the default
+iteration count is now `0` = auto (see the **Iterations** section below); pass
+`--i15` for upstream-like speed and pass count.
 
 ## Modifications from Stock Zopfli
 
