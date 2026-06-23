@@ -26,7 +26,7 @@ changes go under a new top section as they land.
   `<zopfli/zopfli.h>` (was `<zopfli.h>`).
 - Consolidated the public compression entry points: `ZopfliGzipCompress`,
   `ZopfliZlibCompress`, `ZopfliDeflate`, and `ZopfliDeflatePart` are now declared
-  in `zopfli.h` — the only installed public header — so installed consumers can
+  in `zopfli.h` (the main installed public header) so installed consumers can
   reach the per-format functions, not just `ZopfliCompress`. Removed
   `gzip_container.h` and `zlib_container.h`; `deflate.h` now declares only
   internal deflate helpers.
