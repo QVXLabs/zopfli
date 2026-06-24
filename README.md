@@ -326,10 +326,10 @@ The makefile does not build the test suite; use CMake for that.
 ### Compiling directly
 
 To build zopfli by hand, compile all `.c` source files under `src/zopfli` to a
-single binary and link to the standard C math library, e.g.:
+single binary — the library is integer-only, so no `-lm` is needed, e.g.:
 
 ```sh
-gcc src/zopfli/*.c -O2 -W -Wall -Wextra -Wno-unused-function -ansi -pedantic -lm -o zopfli
+gcc src/zopfli/*.c -O2 -W -Wall -Wextra -Wno-unused-function -std=gnu99 -pedantic -o zopfli
 ```
 
 ## Running the tests
