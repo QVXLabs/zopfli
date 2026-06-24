@@ -70,7 +70,10 @@ target_include_directories(libzopfli
   PUBLIC
     $<BUILD_INTERFACE:${ZOPFLI_GENERATED_DIR}>
   INTERFACE
+    # src/zopfli exposes <zopfli.h> (used by the in-tree tests); src exposes
+    # <zopfli/zopfli.h> to match the installed/conan layout (include/zopfli/).
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/zopfli>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
 set_target_properties(libzopfli PROPERTIES
