@@ -29,6 +29,9 @@ The cache that speeds up ZopfliFindLongestMatch of lz77.c.
 
 #ifdef ZOPFLI_LONGEST_MATCH_CACHE
 
+/* run_off sentinel: this position has no full sublen stored (pool overflow). */
+#define LMC_NO_SUBLEN ((unsigned)-1)
+
 /*
 Cache used by ZopfliFindLongestMatch to remember previously found length/dist
 values. The sublen (best distance per shorter-than-best length) is stored as
@@ -66,9 +69,20 @@ void ZopfliCacheToSublen(const ZopfliLongestMatchCache* lmc,
                          size_t pos, size_t length,
                          uint16_t* sublen);
 
-/* Returns the length up to which could be stored in the cache. */
-unsigned ZopfliMaxCachedSublen(const ZopfliLongestMatchCache* lmc,
-                               size_t pos, size_t length);
+/* Returns the length up to which could be stored in the cache. Inline: it sits
+on the squeeze DP's per-position fast-path trigger. */
+ZOPFLI_INLINE unsigned ZopfliMaxCachedSublen(
+    const ZopfliLongestMatchCache* lmc, size_t pos, size_t length) {
+#if ZOPFLI_CACHE_LENGTH == 0
+  return 0;
+#endif
+  /* length == 0 means no match is cached; LMC_NO_SUBLEN means the position
+  overflowed the pool and has no full sublen. Otherwise the stored runs cover
+  the whole match, so the max cached sublen is exactly length. */
+  if (length == 0) return 0;
+  if (lmc->run_off[pos] == LMC_NO_SUBLEN) return 0;
+  return (unsigned)length;
+}
 
 #endif  /* ZOPFLI_LONGEST_MATCH_CACHE */
 
