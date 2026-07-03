@@ -18,7 +18,10 @@ TEST(RoundTrip, DeflateRawSizes) {
     for (size_t i = 0; i < size; i++) {
       repetitive[i] = (unsigned char)("abcdefgh"[(i / 3) % 8]);
     }
-    for (const auto& in : {random, repetitive}) {
+    // Iterate by pointer: a braced list of the vectors themselves would
+    // copy them into the initializer_list's backing array.
+    for (const auto* inp : {&random, &repetitive}) {
+      const std::vector<unsigned char>& in = *inp;
       ZopfliOptions options;
       ZopfliInitOptions(&options);
       options.numiterations = 3;
