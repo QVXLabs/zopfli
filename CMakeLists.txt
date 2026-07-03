@@ -206,6 +206,8 @@ if(BUILD_TESTING)
     test/fixedpoint_range_test.cc
     test/custom_allocator_test.cc
     test/version_test.cc
+    test/api_contract_test.cc
+    test/roundtrip_deflate_test.cc
   )
   target_link_libraries(zopfli_tests PRIVATE libzopfli GTest::gtest_main)
   set_target_properties(zopfli_tests PROPERTIES
