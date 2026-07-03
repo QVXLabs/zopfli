@@ -40,7 +40,8 @@ TEST(Lz77, Histogram) {
 
   std::vector<size_t> ll(ZOPFLI_NUM_LL, 0);
   std::vector<size_t> d(ZOPFLI_NUM_D, 0);
-  ZopfliLZ77GetHistogram(&store, 0, store.size, ll.data(), d.data());
+  ZopfliLZ77GetHistogram(ZopfliDefaultContext(), &store, 0, store.size,
+                         ll.data(), d.data());
 
   size_t ll_total = 0;
   for (size_t v : ll) ll_total += v;

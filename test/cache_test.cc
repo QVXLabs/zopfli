@@ -22,7 +22,8 @@ TEST(Cache, SublenRoundTrip) {
   for (unsigned short i = 3; i <= length; i++) sublen[i] = i * 2;
 
   const size_t pos = 2;
-  ZopfliSublenToCache(sublen.data(), pos, length, &lmc);
+  ZopfliSublenToCache(ZopfliDefaultContext(), sublen.data(), pos, length,
+                      &lmc);
 
   unsigned maxcached = ZopfliMaxCachedSublen(&lmc, pos, length);
   EXPECT_GE(maxcached, 3u);

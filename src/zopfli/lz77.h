@@ -44,6 +44,10 @@ The memory can best be managed by using ZopfliInitLZ77Store to initialize it,
 ZopfliCleanLZ77Store to destroy it, and ZopfliStoreLitLenDist to append values.
 
 */
+/* LZ77 symbols per byte-position checkpoint in ZopfliLZ77Store. Power of two
+so the index math is shifts; 256 keeps the in-chunk derivation scan short. */
+#define ZOPFLI_POS_CHUNK 256
+
 typedef struct ZopfliLZ77Store {
   uint16_t* litlens;  /* Lit or len. */
   uint16_t* dists;  /* If 0: indicates literal in corresponding litlens,
@@ -52,7 +56,12 @@ typedef struct ZopfliLZ77Store {
   size_t cap;  /* Allocated capacity in lz77 symbols, for reuse across runs. */
 
   const uint8_t* data;  /* original data */
-  size_t* pos;  /* position in data where this LZ77 command begins */
+  /* Byte position in data where every ZOPFLI_POS_CHUNKth LZ77 command begins.
+  Each command advances by its own byte length, so per-symbol positions are
+  derivable; storing sparse checkpoints instead of one size_t per symbol
+  (ZopfliLZ77Pos recovers any position by summing within a chunk) saves 8
+  bytes per symbol per resident store. */
+  size_t* pos_chunks;
 
   /* Cumulative histograms wrapping around per chunk. Each chunk has the amount
   of distinct symbols as length, so using 1 value per LZ77 symbol, we have a
@@ -116,10 +125,15 @@ void ZopfliAppendLZ77Store(const ZopfliContext* ctx,
 /* Gets the amount of raw bytes that this range of LZ77 symbols spans. */
 size_t ZopfliLZ77GetByteRange(const ZopfliLZ77Store* lz77,
                               size_t lstart, size_t lend);
+/* Byte position in the data where LZ77 command lpos (< size) begins, derived
+from the chunk checkpoints. */
+size_t ZopfliLZ77Pos(const ZopfliLZ77Store* lz77, size_t lpos);
 /* Gets the histogram of lit/len and dist symbols in the given range, using the
 cumulative histograms, so faster than adding one by one for large range. Does
-not add the one end symbol of value 256. */
-void ZopfliLZ77GetHistogram(const ZopfliLZ77Store* lz77,
+not add the one end symbol of value 256. ctx is needed because the store's
+cumulative histograms are allocated and materialized on first use. */
+void ZopfliLZ77GetHistogram(const ZopfliContext* ctx,
+                            const ZopfliLZ77Store* lz77,
                             size_t lstart, size_t lend,
                             size_t* ll_counts, size_t* d_counts);
 

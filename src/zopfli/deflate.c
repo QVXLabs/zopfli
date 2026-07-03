@@ -437,7 +437,8 @@ static size_t CalculateBlockSymbolSizeGivenCounts(const size_t* ll_counts,
 /*
 Calculates size of the part after the header and tree of an LZ77 block, in bits.
 */
-static size_t CalculateBlockSymbolSize(const unsigned* ll_lengths,
+static size_t CalculateBlockSymbolSize(const ZopfliContext* ctx,
+                                       const unsigned* ll_lengths,
                                        const unsigned* d_lengths,
                                        const ZopfliLZ77Store* lz77,
                                        size_t lstart, size_t lend) {
@@ -447,7 +448,7 @@ static size_t CalculateBlockSymbolSize(const unsigned* ll_lengths,
   } else {
     size_t ll_counts[ZOPFLI_NUM_LL];
     size_t d_counts[ZOPFLI_NUM_D];
-    ZopfliLZ77GetHistogram(lz77, lstart, lend, ll_counts, d_counts);
+    ZopfliLZ77GetHistogram(ctx, lz77, lstart, lend, ll_counts, d_counts);
     return CalculateBlockSymbolSizeGivenCounts(
         ll_counts, d_counts, ll_lengths, d_lengths, lz77, lstart, lend);
   }
@@ -630,7 +631,7 @@ static uint32_t GetDynamicLengths(const ZopfliContext* ctx,
   size_t ll_counts[ZOPFLI_NUM_LL];
   size_t d_counts[ZOPFLI_NUM_D];
 
-  ZopfliLZ77GetHistogram(lz77, lstart, lend, ll_counts, d_counts);
+  ZopfliLZ77GetHistogram(ctx, lz77, lstart, lend, ll_counts, d_counts);
   ll_counts[256] = 1;  /* End symbol. */
   return GetDynamicLengthsGivenCounts(ctx, scratch, lz77, lstart, lend,
                                       ll_counts, d_counts,
@@ -671,7 +672,7 @@ uint32_t ZopfliCalculateBlockSizeScratch(const ZopfliContext* ctx,
   } if (btype == 1) {
     GetFixedTree(ll_lengths, d_lengths);
     result += (uint32_t)CalculateBlockSymbolSize(
-        ll_lengths, d_lengths, lz77, lstart, lend);
+        ctx, ll_lengths, d_lengths, lz77, lstart, lend);
   } else {
     result += GetDynamicLengths(ctx, scratch, lz77, lstart, lend,
                                 ll_lengths, d_lengths);
@@ -794,7 +795,7 @@ static void AddLZ77Block(const ZopfliContext* ctx,
   size_t i;
   if (btype == 0) {
     size_t length = ZopfliLZ77GetByteRange(lz77, lstart, lend);
-    size_t pos = lstart == lend ? 0 : lz77->pos[lstart];
+    size_t pos = lstart == lend ? 0 : ZopfliLZ77Pos(lz77, lstart);
     size_t end = pos + length;
     AddNonCompressedBlock(ctx, final,
                           lz77->data, pos, end, bp, buf);
@@ -871,11 +872,14 @@ static void AddLZ77BlockAutoType(const ZopfliContext* ctx,
   ZopfliInitLZ77Store(lz77->data, &fixedstore);
   if (expensivefixed) {
     /* Recalculate the LZ77 with ZopfliLZ77OptimalFixed */
-    size_t instart = lz77->pos[lstart];
+    size_t instart = ZopfliLZ77Pos(lz77, lstart);
     size_t inend = instart + ZopfliLZ77GetByteRange(lz77, lstart, lend);
 
     ZopfliBlockState s;
-    ZopfliInitBlockState(ctx, instart, inend, 1, &s);
+    /* No LMC: the fixed-tree squeeze is a single forward pass, so every
+    position is match-found exactly once and a cache would be written but
+    never read. Skipping it saves the cache's whole footprint. */
+    ZopfliInitBlockState(ctx, instart, inend, 0, &s);
     ZopfliLZ77OptimalFixed(&s, lz77->data, instart, inend, &fixedstore);
     fixedcost = ZopfliCalculateBlockSizeScratch(ctx, scratch, &fixedstore, 0,
                                                 fixedstore.size, 1);
@@ -934,7 +938,9 @@ static void DeflatePart(const ZopfliContext* ctx, int btype, int final,
     ZopfliLZ77Store store;
     ZopfliBlockState s;
     ZopfliInitLZ77Store(in, &store);
-    ZopfliInitBlockState(ctx, instart, inend, 1, &s);
+    /* No LMC, as in AddLZ77BlockAutoType's fixed path: a single forward pass
+    writes the cache but never reads it back. */
+    ZopfliInitBlockState(ctx, instart, inend, 0, &s);
 
     ZopfliLZ77OptimalFixed(&s, in, instart, inend, &store);
     AddLZ77Block(ctx, &s.katascratch, btype, final, &store, 0, store.size, 0,

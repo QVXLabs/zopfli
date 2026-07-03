@@ -31,7 +31,7 @@ void ZopfliInitLZ77Store(const uint8_t* data, ZopfliLZ77Store* store) {
   store->cap = 0;
   store->litlens = 0;
   store->dists = 0;
-  store->pos = 0;
+  store->pos_chunks = 0;
   store->data = data;
   store->ll_counts = 0;
   store->d_counts = 0;
@@ -41,7 +41,7 @@ void ZopfliInitLZ77Store(const uint8_t* data, ZopfliLZ77Store* store) {
 void ZopfliCleanLZ77Store(const ZopfliContext* ctx, ZopfliLZ77Store* store) {
   ZopfliRealloc(ctx, store->litlens, 0);
   ZopfliRealloc(ctx, store->dists, 0);
-  ZopfliRealloc(ctx, store->pos, 0);
+  ZopfliRealloc(ctx, store->pos_chunks, 0);
   ZopfliRealloc(ctx, store->ll_counts, 0);
   ZopfliRealloc(ctx, store->d_counts, 0);
 }
@@ -68,12 +68,18 @@ static void ZopfliReserveLZ77Store(const ZopfliContext* ctx,
       ctx, store->litlens, sizeof(*store->litlens) * newcap);
   store->dists = (uint16_t*)ZopfliRealloc(
       ctx, store->dists, sizeof(*store->dists) * newcap);
-  store->pos =
-      (size_t*)ZopfliRealloc(ctx, store->pos, sizeof(*store->pos) * newcap);
-  store->ll_counts = (uint32_t*)ZopfliRealloc(
-      ctx, store->ll_counts, sizeof(*store->ll_counts) * llc);
-  store->d_counts = (uint32_t*)ZopfliRealloc(
-      ctx, store->d_counts, sizeof(*store->d_counts) * dc);
+  store->pos_chunks = (size_t*)ZopfliRealloc(
+      ctx, store->pos_chunks,
+      sizeof(*store->pos_chunks) * (newcap / ZOPFLI_POS_CHUNK + 1));
+  /* The cumulative histograms are allocated on first materialization
+  (EnsureCounts); a store that never serves histogram queries never allocates
+  them. Once allocated, they grow with the capacity here. */
+  if (store->ll_counts) {
+    store->ll_counts = (uint32_t*)ZopfliRealloc(
+        ctx, store->ll_counts, sizeof(*store->ll_counts) * llc);
+    store->d_counts = (uint32_t*)ZopfliRealloc(
+        ctx, store->d_counts, sizeof(*store->d_counts) * dc);
+  }
   store->cap = newcap;
 }
 
@@ -85,24 +91,15 @@ void ZopfliResetLZ77Store(ZopfliLZ77Store* store) {
 void ZopfliCopyLZ77Store(const ZopfliContext* ctx,
     const ZopfliLZ77Store* source, ZopfliLZ77Store* dest) {
   size_t i;
-  size_t llsize = ZOPFLI_NUM_LL * CeilDiv(source->size, ZOPFLI_NUM_LL);
-  size_t dsize = ZOPFLI_NUM_D * CeilDiv(source->size, ZOPFLI_NUM_D);
-  /* Only the materialized prefix of the counts needs copying; the dest can
-  materialize the rest from its own symbols on demand. */
-  size_t llvalid = ZOPFLI_NUM_LL * CeilDiv(source->counts_size, ZOPFLI_NUM_LL);
-  size_t dvalid = ZOPFLI_NUM_D * CeilDiv(source->counts_size, ZOPFLI_NUM_D);
   ZopfliCleanLZ77Store(ctx, dest);
   ZopfliInitLZ77Store(source->data, dest);
   dest->litlens =
       (uint16_t*)ZopfliRealloc(ctx, NULL, sizeof(*dest->litlens) * source->size);
   dest->dists =
       (uint16_t*)ZopfliRealloc(ctx, NULL, sizeof(*dest->dists) * source->size);
-  dest->pos =
-      (size_t*)ZopfliRealloc(ctx, NULL, sizeof(*dest->pos) * source->size);
-  dest->ll_counts =
-      (uint32_t*)ZopfliRealloc(ctx, NULL, sizeof(*dest->ll_counts) * llsize);
-  dest->d_counts =
-      (uint32_t*)ZopfliRealloc(ctx, NULL, sizeof(*dest->d_counts) * dsize);
+  dest->pos_chunks = (size_t*)ZopfliRealloc(
+      ctx, NULL,
+      sizeof(*dest->pos_chunks) * (source->size / ZOPFLI_POS_CHUNK + 1));
 
   dest->size = source->size;
   dest->cap = source->size;
@@ -110,13 +107,29 @@ void ZopfliCopyLZ77Store(const ZopfliContext* ctx,
   for (i = 0; i < source->size; i++) {
     dest->litlens[i] = source->litlens[i];
     dest->dists[i] = source->dists[i];
-    dest->pos[i] = source->pos[i];
   }
-  for (i = 0; i < llvalid; i++) {
-    dest->ll_counts[i] = source->ll_counts[i];
+  for (i = 0; i < CeilDiv(source->size, ZOPFLI_POS_CHUNK); i++) {
+    dest->pos_chunks[i] = source->pos_chunks[i];
   }
-  for (i = 0; i < dvalid; i++) {
-    dest->d_counts[i] = source->d_counts[i];
+  /* Only the materialized prefix of the counts exists and needs copying; the
+  dest can materialize the rest from its own symbols on demand. A source with
+  nothing materialized leaves the dest's counts unallocated. */
+  if (source->counts_size > 0) {
+    size_t llsize = ZOPFLI_NUM_LL * CeilDiv(source->size, ZOPFLI_NUM_LL);
+    size_t dsize = ZOPFLI_NUM_D * CeilDiv(source->size, ZOPFLI_NUM_D);
+    size_t llvalid =
+        ZOPFLI_NUM_LL * CeilDiv(source->counts_size, ZOPFLI_NUM_LL);
+    size_t dvalid = ZOPFLI_NUM_D * CeilDiv(source->counts_size, ZOPFLI_NUM_D);
+    dest->ll_counts =
+        (uint32_t*)ZopfliRealloc(ctx, NULL, sizeof(*dest->ll_counts) * llsize);
+    dest->d_counts =
+        (uint32_t*)ZopfliRealloc(ctx, NULL, sizeof(*dest->d_counts) * dsize);
+    for (i = 0; i < llvalid; i++) {
+      dest->ll_counts[i] = source->ll_counts[i];
+    }
+    for (i = 0; i < dvalid; i++) {
+      dest->d_counts[i] = source->d_counts[i];
+    }
   }
 }
 
@@ -132,7 +145,9 @@ void ZopfliStoreLitLenDist(const ZopfliContext* ctx, uint16_t length,
 
   store->litlens[origsize] = length;
   store->dists[origsize] = dist;
-  store->pos[origsize] = pos;
+  if (origsize % ZOPFLI_POS_CHUNK == 0) {
+    store->pos_chunks[origsize / ZOPFLI_POS_CHUNK] = pos;
+  }
   assert(length < 259);
 
   /* The cumulative histograms are not maintained here; EnsureCounts
@@ -149,9 +164,18 @@ the first chunk). Maintenance is deferred so stores that never serve histogram
 queries (the per-iteration squeeze refills) never pay for it. The const cast
 is an internal-caching detail: every store object is writable.
 */
-static void EnsureCounts(const ZopfliLZ77Store* cstore) {
+static void EnsureCounts(const ZopfliContext* ctx,
+                         const ZopfliLZ77Store* cstore) {
   ZopfliLZ77Store* store = (ZopfliLZ77Store*)cstore;
   size_t i, j;
+  if (!store->ll_counts) {
+    size_t llc = ZOPFLI_NUM_LL * CeilDiv(store->cap, ZOPFLI_NUM_LL);
+    size_t dc = ZOPFLI_NUM_D * CeilDiv(store->cap, ZOPFLI_NUM_D);
+    store->ll_counts = (uint32_t*)ZopfliRealloc(
+        ctx, NULL, sizeof(*store->ll_counts) * llc);
+    store->d_counts = (uint32_t*)ZopfliRealloc(
+        ctx, NULL, sizeof(*store->d_counts) * dc);
+  }
   for (i = store->counts_size; i < store->size; i++) {
     size_t llstart = ZOPFLI_NUM_LL * (i / ZOPFLI_NUM_LL);
     size_t dstart = ZOPFLI_NUM_D * (i / ZOPFLI_NUM_D);
@@ -181,18 +205,32 @@ void ZopfliAppendLZ77Store(const ZopfliContext* ctx,
                            const ZopfliLZ77Store* store,
                            ZopfliLZ77Store* target) {
   size_t i;
+  /* Positions are derived incrementally: each command advances by its own
+  byte length. */
+  size_t pos = store->size == 0 ? 0 : store->pos_chunks[0];
   for (i = 0; i < store->size; i++) {
     ZopfliStoreLitLenDist(ctx, store->litlens[i], store->dists[i],
-                          store->pos[i], target);
+                          pos, target);
+    pos += store->dists[i] == 0 ? 1 : store->litlens[i];
   }
+}
+
+size_t ZopfliLZ77Pos(const ZopfliLZ77Store* lz77, size_t lpos) {
+  size_t i = lpos - lpos % ZOPFLI_POS_CHUNK;
+  size_t pos = lz77->pos_chunks[lpos / ZOPFLI_POS_CHUNK];
+  assert(lpos < lz77->size);
+  for (; i < lpos; i++) {
+    pos += lz77->dists[i] == 0 ? 1 : lz77->litlens[i];
+  }
+  return pos;
 }
 
 size_t ZopfliLZ77GetByteRange(const ZopfliLZ77Store* lz77,
                               size_t lstart, size_t lend) {
   size_t l = lend - 1;
   if (lstart == lend) return 0;
-  return lz77->pos[l] + ((lz77->dists[l] == 0) ?
-      1 : lz77->litlens[l]) - lz77->pos[lstart];
+  return ZopfliLZ77Pos(lz77, l) + ((lz77->dists[l] == 0) ?
+      1 : lz77->litlens[l]) - ZopfliLZ77Pos(lz77, lstart);
 }
 
 /* Lit/len Huffman symbol at store position i, recomputed from litlens/dists
@@ -227,7 +265,8 @@ static void ZopfliLZ77GetHistogramAt(const ZopfliLZ77Store* lz77, size_t lpos,
   }
 }
 
-void ZopfliLZ77GetHistogram(const ZopfliLZ77Store* lz77,
+void ZopfliLZ77GetHistogram(const ZopfliContext* ctx,
+                           const ZopfliLZ77Store* lz77,
                            size_t lstart, size_t lend,
                            size_t* ll_counts, size_t* d_counts) {
   size_t i;
@@ -241,7 +280,7 @@ void ZopfliLZ77GetHistogram(const ZopfliLZ77Store* lz77,
   } else {
     /* Subtract the cumulative histograms at the end and the start to get the
     histogram for this range. */
-    EnsureCounts(lz77);
+    EnsureCounts(ctx, lz77);
     ZopfliLZ77GetHistogramAt(lz77, lend - 1, ll_counts, d_counts);
     if (lstart > 0) {
       size_t ll_counts2[ZOPFLI_NUM_LL];
@@ -496,7 +535,7 @@ static void StoreInLongestMatchCache(ZopfliBlockState* s,
     s->lmc->dist[lmcpos] = length < ZOPFLI_MIN_MATCH ? 0 : distance;
     s->lmc->length[lmcpos] = length < ZOPFLI_MIN_MATCH ? 0 : length;
     assert(!(s->lmc->length[lmcpos] == 1 && s->lmc->dist[lmcpos] == 0));
-    ZopfliSublenToCache(sublen, lmcpos, length, s->lmc);
+    ZopfliSublenToCache(s->ctx, sublen, lmcpos, length, s->lmc);
   }
 }
 #endif
