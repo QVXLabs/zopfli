@@ -23,6 +23,7 @@ Author: afalls@qvxlabs.com (Ardy123)
 #include <assert.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "context.h"
 #include "deflate.h"
@@ -130,12 +131,6 @@ static void RandomizeStatFreqs(RanState* state, SymbolStats* stats) {
   stats->litlens[256] = 1;  /* End symbol. */
 }
 
-static void ClearStatFreqs(SymbolStats* stats) {
-  size_t i;
-  for (i = 0; i < ZOPFLI_NUM_LL; i++) stats->litlens[i] = 0;
-  for (i = 0; i < ZOPFLI_NUM_D; i++) stats->dists[i] = 0;
-}
-
 int ZopfliGetCostShift(size_t blocksize) {
   /* A single position costs at most ~32 bits, so a whole block costs less than
   32 * blocksize bits. Pick the largest shift keeping the scaled total <= 2^29,
@@ -221,17 +216,20 @@ static void UpdateCostForRange(ZopfliBlockState* s, size_t j, size_t klo,
     size_t khi, uint16_t dist, ZopfliCost dcost, const CostCache* cache,
     ZopfliCost costsj, ZopfliCost mincostaddcostj) {
   ZopfliCost* costs = s->costs;
+  uint32_t* lendist = s->lendist_array;
+  ZopfliCost base = dcost + costsj;
+  uint32_t distpacked = (uint32_t)dist << 16;
   size_t k;
   for (k = klo; k <= khi; k++) {
+    ZopfliCost oldCost = costs[j + k];
     ZopfliCost newCost;
-    if (costs[j + k] <= mincostaddcostj) continue;
-    newCost = cache->ll_cost[k] + dcost + costsj;
+    if (oldCost <= mincostaddcostj) continue;
+    newCost = cache->ll_cost[k] + base;
     assert(newCost >= 0);
-    if (newCost < costs[j + k]) {
+    if (newCost < oldCost) {
       assert(k <= ZOPFLI_MAX_MATCH);
       costs[j + k] = newCost;
-      s->length_array[j + k] = (uint16_t)k;
-      s->dist_array[j + k] = dist;
+      lendist[j + k] = distpacked | (uint32_t)k;
     }
   }
 }
@@ -244,8 +242,8 @@ in: the input data array
 instart: where to start
 inend: where to stop (not inclusive)
 cache: precomputed fixed-point costs of each lit/len/dist symbol.
-length_array: output array of size (inend - instart) which will receive the best
-    length to reach this byte from a previous byte.
+The block state's lendist_array (size inend - instart + 1) receives, per byte,
+the best (dist << 16) | length to reach it from a previous byte.
 returns the cost that was, according to the cost model, needed to get to the end.
 */
 static ZopfliCost GetBestLengths(ZopfliBlockState *s,
@@ -255,8 +253,7 @@ static ZopfliCost GetBestLengths(ZopfliBlockState *s,
                                     ZopfliHash* h, int build_hash) {
   /* Best cost to get here so far. */
   ZopfliCost* costs = s->costs;
-  uint16_t* length_array = s->length_array;
-  uint16_t* dist_array = s->dist_array;
+  uint32_t* lendist_array = s->lendist_array;
   size_t blocksize = inend - instart;
   size_t i = 0, k, kend;
   uint16_t leng;
@@ -284,11 +281,10 @@ static ZopfliCost GetBestLengths(ZopfliBlockState *s,
 
   for (i = 1; i < blocksize + 1; i++) costs[i] = ZOPFLI_COST_SENTINEL;
   costs[0] = 0;  /* Because it's the start. */
-  length_array[0] = 0;
-  dist_array[0] = 0;
+  lendist_array[0] = 0;
 
   for (i = instart; i < inend; i++) {
-    size_t j = i - instart;  /* Index in the costs array and length_array. */
+    size_t j = i - instart;  /* Index in the costs and lendist arrays. */
     if (build_hash) ZopfliUpdateHash(in, i, inend, h);
 
 #ifdef ZOPFLI_SHORTCUT_LONG_REPETITIONS
@@ -312,8 +308,9 @@ static ZopfliCost GetBestLengths(ZopfliBlockState *s,
       ZOPFLI_MAX_MATCH values to avoid calling ZopfliFindLongestMatch. */
       for (k = 0; k < ZOPFLI_MAX_MATCH; k++) {
         costs[j + ZOPFLI_MAX_MATCH] = costs[j] + symbolcost;
-        length_array[j + ZOPFLI_MAX_MATCH] = ZOPFLI_MAX_MATCH;
-        dist_array[j + ZOPFLI_MAX_MATCH] = 1;  /* Dist-1 repetition. */
+        /* Dist-1 repetition of length ZOPFLI_MAX_MATCH. */
+        lendist_array[j + ZOPFLI_MAX_MATCH] =
+            ((uint32_t)1 << 16) | ZOPFLI_MAX_MATCH;
         i++;
         j++;
         ZopfliUpdateHash(in, i, inend, h);
@@ -327,8 +324,7 @@ static ZopfliCost GetBestLengths(ZopfliBlockState *s,
       assert(newCost >= 0);
       if (newCost < costs[j + 1]) {
         costs[j + 1] = newCost;
-        length_array[j + 1] = 1;
-        dist_array[j + 1] = 0;  /* Literal. */
+        lendist_array[j + 1] = 1;  /* Literal: length 1, dist 0. */
       }
     }
     mincostaddcostj = mincost + costs[j];
@@ -405,26 +401,27 @@ static ZopfliCost GetBestLengths(ZopfliBlockState *s,
 
 /*
 Calculates the optimal path of lz77 lengths to use from the calculated
-length_array. The length_array must contain the optimal length to reach that
+lendist_array, whose low half must contain the optimal length to reach that
 byte. The path will be filled with the lengths to use, so its data size will be
 the number of lz77 symbols.
 */
 static void TraceBackwards(ZopfliBlockState* s, size_t size) {
-  const uint16_t* length_array = s->length_array;
+  const uint32_t* lendist_array = s->lendist_array;
   size_t index = size;
   s->pathsize = 0;  /* Reuse the buffer (kept allocated) across iterations. */
   if (size == 0) return;
   for (;;) {
+    uint16_t length = (uint16_t)(lendist_array[index] & 0xffff);
     if (s->pathsize == s->pathcap) {
       s->pathcap = s->pathcap ? ZOPFLI_GROW_CAP(s->pathcap) : 16;
       s->path = (uint16_t*)ZopfliRealloc(s->ctx, s->path,
                                          s->pathcap * sizeof(*s->path));
     }
-    s->path[s->pathsize++] = length_array[index];
-    assert(length_array[index] <= index);
-    assert(length_array[index] <= ZOPFLI_MAX_MATCH);
-    assert(length_array[index] != 0);
-    index -= length_array[index];
+    s->path[s->pathsize++] = length;
+    assert(length <= index);
+    assert(length <= ZOPFLI_MAX_MATCH);
+    assert(length != 0);
+    index -= length;
     if (index == 0) break;
   }
 
@@ -438,13 +435,13 @@ static void TraceBackwards(ZopfliBlockState* s, size_t size) {
 
 /*
 Outputs the lz77 symbols for the chosen path. Distances were already computed
-during GetBestLengths (dist_array, parallel to length_array), so unlike the
-forward pass, this needs no hash and no match recalculation.
+during GetBestLengths (packed into lendist_array), so unlike the forward pass,
+this needs no hash and no match recalculation.
 */
 static void FollowPath(ZopfliBlockState* s,
                        const uint8_t* in, size_t instart, size_t inend,
                        ZopfliLZ77Store* store) {
-  const uint16_t* dist_array = s->dist_array;
+  const uint32_t* lendist_array = s->lendist_array;
   size_t i, pos = instart;
   size_t cur = 0;  /* Position within the block, i.e. pos - instart. */
 
@@ -454,7 +451,7 @@ static void FollowPath(ZopfliBlockState* s,
     uint16_t length = s->path[i];
     assert(pos < inend);
     if (length >= ZOPFLI_MIN_MATCH) {
-      uint16_t dist = dist_array[cur + length];
+      uint16_t dist = (uint16_t)(lendist_array[cur + length] >> 16);
       ZopfliVerifyLenDist(in, inend, pos, dist, length);
       ZopfliStoreLitLenDist(s->ctx, length, dist, pos, store);
     } else {
@@ -474,20 +471,28 @@ static void CalculateStatistics(SymbolStats* stats, int shift) {
   ZopfliCalculateEntropy(stats->dists, ZOPFLI_NUM_D, stats->d_symbols, shift);
 }
 
-/* Appends the symbol statistics from the store. */
-static void GetStatistics(const ZopfliLZ77Store* store, SymbolStats* stats,
-                          int shift) {
+/* Computes the store's symbol histogram (including the end symbol). The
+btype-2 block size is a pure function of this histogram. */
+static void StoreHistogram(const ZopfliLZ77Store* store,
+                           size_t* ll_freqs, size_t* d_freqs) {
   size_t i;
+  for (i = 0; i < ZOPFLI_NUM_LL; i++) ll_freqs[i] = 0;
+  for (i = 0; i < ZOPFLI_NUM_D; i++) d_freqs[i] = 0;
   for (i = 0; i < store->size; i++) {
     if (store->dists[i] == 0) {
-      stats->litlens[store->litlens[i]]++;
+      ll_freqs[store->litlens[i]]++;
     } else {
-      stats->litlens[ZopfliGetLengthSymbol(store->litlens[i])]++;
-      stats->dists[ZopfliGetDistSymbol(store->dists[i])]++;
+      ll_freqs[ZopfliGetLengthSymbol(store->litlens[i])]++;
+      d_freqs[ZopfliGetDistSymbol(store->dists[i])]++;
     }
   }
-  stats->litlens[256] = 1;  /* End symbol. */
+  ll_freqs[256] = 1;  /* End symbol. */
+}
 
+/* Computes the symbol statistics from the store. */
+static void GetStatistics(const ZopfliLZ77Store* store, SymbolStats* stats,
+                          int shift) {
+  StoreHistogram(store, stats->litlens, stats->dists);
   CalculateStatistics(stats, shift);
 }
 
@@ -500,7 +505,7 @@ instart: where to start
 inend: where to stop (not inclusive)
 cache: precomputed fixed-point cost model for this squeeze run
 store: place to output the LZ77 data
-The working buffers (costs/length_array/dist_array/path) live in the block state.
+The working buffers (costs/lendist_array/path) live in the block state.
 returns the cost that was, according to the cost model, needed to get to the end.
     This is not the actual cost.
 */
@@ -521,10 +526,8 @@ at the end of the squeeze call. */
 static void AllocBlockBuffers(ZopfliBlockState* s, size_t blocksize) {
   s->costs = (ZopfliCost*)ZopfliRealloc(
       s->ctx, NULL, sizeof(*s->costs) * (blocksize + 1));
-  s->length_array = (uint16_t*)ZopfliRealloc(
-      s->ctx, NULL, sizeof(*s->length_array) * (blocksize + 1));
-  s->dist_array = (uint16_t*)ZopfliRealloc(
-      s->ctx, NULL, sizeof(*s->dist_array) * (blocksize + 1));
+  s->lendist_array = (uint32_t*)ZopfliRealloc(
+      s->ctx, NULL, sizeof(*s->lendist_array) * (blocksize + 1));
   s->path = NULL;
   s->pathsize = 0;
   s->pathcap = 0;
@@ -532,12 +535,10 @@ static void AllocBlockBuffers(ZopfliBlockState* s, size_t blocksize) {
 
 static void FreeBlockBuffers(ZopfliBlockState* s) {
   ZopfliRealloc(s->ctx, s->costs, 0);
-  ZopfliRealloc(s->ctx, s->length_array, 0);
-  ZopfliRealloc(s->ctx, s->dist_array, 0);
+  ZopfliRealloc(s->ctx, s->lendist_array, 0);
   ZopfliRealloc(s->ctx, s->path, 0);
   s->costs = NULL;
-  s->length_array = NULL;
-  s->dist_array = NULL;
+  s->lendist_array = NULL;
   s->path = NULL;
 }
 
@@ -551,6 +552,11 @@ void ZopfliLZ77Optimal(ZopfliBlockState *s,
   ZopfliHash hash;
   ZopfliHash* h = &hash;
   SymbolStats stats, beststats, laststats;
+  /* Fresh-parse histogram and the previous iteration's, for the repeated-parse
+  block-size shortcut. Heap-allocated: growing this frame moves the stack the
+  DP helpers run on, which measurably perturbs the hot loop. */
+  size_t* hists;
+  size_t *hist_ll, *hist_d, *prev_ll, *prev_d;
   int i;
   int shift = ZopfliGetCostShift(blocksize);
   CostCache cache;
@@ -567,6 +573,12 @@ void ZopfliLZ77Optimal(ZopfliBlockState *s,
   ZopfliInitLZ77Store(in, &currentstore);
   ZopfliAllocHash(s->ctx, ZOPFLI_WINDOW_SIZE, h);
   AllocBlockBuffers(s, blocksize);
+  hists = (size_t*)ZopfliRealloc(
+      s->ctx, NULL, sizeof(*hists) * 2 * (ZOPFLI_NUM_LL + ZOPFLI_NUM_D));
+  hist_ll = hists;
+  hist_d = hist_ll + ZOPFLI_NUM_LL;
+  prev_ll = hist_d + ZOPFLI_NUM_D;
+  prev_d = prev_ll + ZOPFLI_NUM_LL;
 
   /* Do regular deflate, then loop multiple shortest path runs, each time using
   the statistics of the previous run. */
@@ -584,9 +596,26 @@ void ZopfliLZ77Optimal(ZopfliBlockState *s,
     BuildStatCostCache(&stats, shift, &cache);
     LZ77OptimalRun(s, in, instart, inend, &cache, &currentstore, h, build_hash);
     if (i == 0) build_hash = !(s->lmc && s->lmc->all_complete);
-    cost = ZopfliCalculateBlockSizeScratch(s->ctx, &s->katascratch,
-                                           &currentstore, 0,
-                                           currentstore.size, 2);
+    /* The parse's histogram, computed once: it decides the repeated-parse
+    shortcut below and then becomes the next model's frequencies. */
+    StoreHistogram(&currentstore, hist_ll, hist_d);
+    if (i > 0 &&
+        memcmp(hist_ll, prev_ll, ZOPFLI_NUM_LL * sizeof(*hist_ll)) == 0 &&
+        memcmp(hist_d, prev_d, ZOPFLI_NUM_D * sizeof(*hist_d)) == 0) {
+      /* The block size is a pure function of the histogram, so a repeat of the
+      previous iteration's histogram must cost exactly the same. */
+      cost = lastcost;
+    } else {
+      /* The freshly computed histogram equals what the store would serve;
+      passing it in keeps currentstore's cumulative counts unmaterialized
+      across the whole iteration loop. */
+      cost = ZopfliCalculateBlockSizeGivenCounts(s->ctx, &s->katascratch,
+                                                 &currentstore, 0,
+                                                 currentstore.size,
+                                                 hist_ll, hist_d);
+    }
+    memcpy(prev_ll, hist_ll, ZOPFLI_NUM_LL * sizeof(*prev_ll));
+    memcpy(prev_d, hist_d, ZOPFLI_NUM_D * sizeof(*prev_d));
     if (s->ctx->options.verbose_more
         || (s->ctx->options.verbose && cost < bestcost)) {
       fprintf(stderr, "Iteration %d: %d bit\n", i, (int) cost);
@@ -598,8 +627,10 @@ void ZopfliLZ77Optimal(ZopfliBlockState *s,
       bestcost = cost;
     }
     CopyStats(&stats, &laststats);
-    ClearStatFreqs(&stats);
-    GetStatistics(&currentstore, &stats, shift);
+    /* Reuse the already-computed histogram as the next model's frequencies. */
+    memcpy(stats.litlens, hist_ll, sizeof(stats.litlens));
+    memcpy(stats.dists, hist_d, sizeof(stats.dists));
+    CalculateStatistics(&stats, shift);
     if (lastrandomstep != -1) {
       /* This makes it converge slower but better. Do it only once the
       randomness kicks in so that if the user does few iterations, it gives a
@@ -616,6 +647,7 @@ void ZopfliLZ77Optimal(ZopfliBlockState *s,
     lastcost = cost;
   }
 
+  ZopfliRealloc(s->ctx, hists, 0);
   FreeBlockBuffers(s);
   ZopfliCleanLZ77Store(s->ctx, &currentstore);
   ZopfliCleanHash(s->ctx, h);

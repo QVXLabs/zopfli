@@ -5,6 +5,18 @@ All notable changes to this project are documented here. The format is based on
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). New
 changes go under a new top section as they land.
 
+## [Unreleased]
+
+### Changed
+- Further hot-path performance work; compressed output is bit-identical in
+  every configuration. Measured on an i9-8950HK: ~9% faster at the default
+  iteration count and ~8% at `--i200` on text, ~12% faster on incompressible
+  input, and ~21% lower peak memory at `--i200` on incompressible input.
+  Internals: packed length/distance array in the squeeze DP, inlined
+  longest-match-cache probe, shared tree-encoding preprocessing across the
+  RLE combos, repeated-parse block-size shortcut, lazily materialized store
+  histograms, and assorted match-finder/cache cleanups.
+
 ## [1.1.0] - 2026-06-23
 
 ### Added

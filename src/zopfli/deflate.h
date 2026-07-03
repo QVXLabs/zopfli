@@ -66,6 +66,20 @@ uint32_t ZopfliCalculateBlockSizeScratch(const ZopfliContext* ctx,
                                          size_t lstart, size_t lend, int btype);
 
 /*
+Dynamic-tree (btype 2) block size in bits for [lstart, lend), given the
+range's precomputed symbol histogram (ll_counts[256] must already hold the end
+symbol). Identical result to ZopfliCalculateBlockSizeScratch(..., 2) but skips
+extracting the histogram from the store, so the store's cumulative counts need
+not be materialized.
+*/
+uint32_t ZopfliCalculateBlockSizeGivenCounts(const ZopfliContext* ctx,
+                                             ZopfliKatajainenScratch* scratch,
+                                             const ZopfliLZ77Store* lz77,
+                                             size_t lstart, size_t lend,
+                                             const size_t* ll_counts,
+                                             const size_t* d_counts);
+
+/*
 Calculates block size in bits, automatically using the best btype.
 */
 uint32_t ZopfliCalculateBlockSizeAutoType(const ZopfliLZ77Store* lz77,

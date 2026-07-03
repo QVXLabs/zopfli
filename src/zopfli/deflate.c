@@ -102,25 +102,53 @@ static void PatchDistanceCodesForBuggyDecoders(unsigned* d_lengths) {
 }
 
 /*
+The lit/len + dist code lengths flattened into the single sequence DEFLATE
+encodes, with the hlit/hdist zero-trims already applied. Combo-independent, so
+the 8 EncodeTree RLE combos share one instance instead of re-deriving it.
+*/
+typedef struct TreeLens {
+  uint8_t lens[ZOPFLI_NUM_LL + ZOPFLI_NUM_D];
+  unsigned hlit;  /* 286 - 257 max */
+  unsigned hdist;  /* 32 - 1 max, but gzip does not like hdist > 29. */
+  unsigned lld_total;  /* Total amount of literal, length, distance codes. */
+} TreeLens;
+
+static void BuildTreeLens(const unsigned* ll_lengths, const unsigned* d_lengths,
+                          TreeLens* t) {
+  unsigned hlit = 29;
+  unsigned hdist = 29;
+  unsigned hlit2;
+  size_t i;
+
+  /* Trim zeros. */
+  while (hlit > 0 && ll_lengths[257 + hlit - 1] == 0) hlit--;
+  while (hdist > 0 && d_lengths[1 + hdist - 1] == 0) hdist--;
+  hlit2 = hlit + 257;
+
+  t->hlit = hlit;
+  t->hdist = hdist;
+  t->lld_total = hlit2 + hdist + 1;
+  for (i = 0; i < hlit2; i++) t->lens[i] = (uint8_t)ll_lengths[i];
+  for (i = 0; i <= hdist; i++) t->lens[hlit2 + i] = (uint8_t)d_lengths[i];
+}
+
+/*
 Encodes the Huffman tree and returns how many bits its encoding takes. If out
 is a null pointer, only returns the size and runs faster.
 */
 static size_t EncodeTree(const ZopfliContext* ctx,
                          ZopfliKatajainenScratch* scratch,
-                         const unsigned* ll_lengths,
-                         const unsigned* d_lengths,
+                         const TreeLens* t,
                          int use_16, int use_17, int use_18,
                          uint8_t* bp, ZopfliBuf* buf) {
-  unsigned lld_total;  /* Total amount of literal, length, distance codes. */
+  const uint8_t* lens = t->lens;
+  unsigned lld_total = t->lld_total;
   /* Runlength encoded version of lengths of litlen and dist trees. */
   unsigned* rle = NULL;
   unsigned* rle_bits = NULL;  /* Extra bits for rle values 16, 17 and 18. */
   size_t rle_size = 0;  /* Size of rle array. */
   size_t rle_bits_size = 0;  /* Should have same value as rle_size. */
-  unsigned hlit = 29;  /* 286 - 257 */
-  unsigned hdist = 29;  /* 32 - 1, but gzip does not like hdist > 29.*/
   unsigned hclen;
-  unsigned hlit2;
   size_t i, j;
   size_t clcounts[19];
   unsigned clcl[19];  /* Code length code lengths. */
@@ -134,20 +162,12 @@ static size_t EncodeTree(const ZopfliContext* ctx,
 
   for(i = 0; i < 19; i++) clcounts[i] = 0;
 
-  /* Trim zeros. */
-  while (hlit > 0 && ll_lengths[257 + hlit - 1] == 0) hlit--;
-  while (hdist > 0 && d_lengths[1 + hdist - 1] == 0) hdist--;
-  hlit2 = hlit + 257;
-
-  lld_total = hlit2 + hdist + 1;
-
   for (i = 0; i < lld_total; i++) {
     /* This is an encoding of a huffman tree, so now the length is a symbol */
-    uint8_t symbol = i < hlit2 ? ll_lengths[i] : d_lengths[i - hlit2];
+    uint8_t symbol = lens[i];
     unsigned count = 1;
     if(use_16 || (symbol == 0 && (use_17 || use_18))) {
-      for (j = i + 1; j < lld_total && symbol ==
-          (j < hlit2 ? ll_lengths[j] : d_lengths[j - hlit2]); j++) {
+      for (j = i + 1; j < lld_total && symbol == lens[j]; j++) {
         count++;
       }
     }
@@ -217,8 +237,8 @@ static size_t EncodeTree(const ZopfliContext* ctx,
   while (hclen > 0 && clcounts[order[hclen + 4 - 1]] == 0) hclen--;
 
   if (!size_only) {
-    AddBits(ctx, hlit, 5, bp, buf);
-    AddBits(ctx, hdist, 5, bp, buf);
+    AddBits(ctx, t->hlit, 5, bp, buf);
+    AddBits(ctx, t->hdist, 5, bp, buf);
     AddBits(ctx, hclen, 4, bp, buf);
 
     for (i = 0; i < hclen + 4; i++) {
@@ -257,12 +277,14 @@ static void AddDynamicTree(const ZopfliContext* ctx,
                            const unsigned* ll_lengths,
                            const unsigned* d_lengths,
                            uint8_t* bp, ZopfliBuf* buf) {
+  TreeLens t;
   int i;
   int best = 0;
   size_t bestsize = 0;
 
+  BuildTreeLens(ll_lengths, d_lengths, &t);
   for(i = 0; i < 8; i++) {
-    size_t size = EncodeTree(ctx, scratch, ll_lengths, d_lengths,
+    size_t size = EncodeTree(ctx, scratch, &t,
                              i & 1, i & 2, i & 4,
                              0, NULL);
     if (bestsize == 0 || size < bestsize) {
@@ -271,7 +293,7 @@ static void AddDynamicTree(const ZopfliContext* ctx,
     }
   }
 
-  EncodeTree(ctx, scratch, ll_lengths, d_lengths,
+  EncodeTree(ctx, scratch, &t,
              best & 1, best & 2, best & 4,
              bp, buf);
 }
@@ -283,11 +305,13 @@ static size_t CalculateTreeSize(const ZopfliContext* ctx,
                                 ZopfliKatajainenScratch* scratch,
                                 const unsigned* ll_lengths,
                                 const unsigned* d_lengths) {
+  TreeLens t;
   size_t result = 0;
   int i;
 
+  BuildTreeLens(ll_lengths, d_lengths, &t);
   for(i = 0; i < 8; i++) {
-    size_t size = EncodeTree(ctx, scratch, ll_lengths, d_lengths,
+    size_t size = EncodeTree(ctx, scratch, &t,
                              i & 1, i & 2, i & 4,
                              0, NULL);
     if (result == 0 || size < result) result = size;
@@ -554,6 +578,14 @@ static uint32_t TryOptimizeHuffmanForRle(
                                    d_lengths2);
   PatchDistanceCodesForBuggyDecoders(d_lengths2);
 
+  /* If the RLE optimization didn't change the code lengths, the second
+  evaluation would reproduce treesize/datasize exactly and the < below keeps
+  the original on ties, so skip it. */
+  if (memcmp(ll_lengths2, ll_lengths, sizeof(ll_lengths2)) == 0 &&
+      memcmp(d_lengths2, d_lengths, sizeof(d_lengths2)) == 0) {
+    return treesize + datasize;
+  }
+
   treesize2 = (uint32_t)CalculateTreeSize(ctx, scratch, ll_lengths2,
                                           d_lengths2);
   datasize2 = (uint32_t)CalculateBlockSymbolSizeGivenCounts(ll_counts, d_counts,
@@ -574,6 +606,22 @@ symbols to have smallest output size. This are not necessarily the ideal Huffman
 bit lengths. Returns size of encoded tree and data in bits, not including the
 3-bit block header.
 */
+static uint32_t GetDynamicLengthsGivenCounts(const ZopfliContext* ctx,
+                                ZopfliKatajainenScratch* scratch,
+                                const ZopfliLZ77Store* lz77,
+                                size_t lstart, size_t lend,
+                                const size_t* ll_counts,
+                                const size_t* d_counts,
+                                unsigned* ll_lengths, unsigned* d_lengths) {
+  ZopfliCalculateBitLengthsScratch(ctx, scratch, ll_counts, ZOPFLI_NUM_LL, 15,
+                                   ll_lengths);
+  ZopfliCalculateBitLengthsScratch(ctx, scratch, d_counts, ZOPFLI_NUM_D, 15,
+                                   d_lengths);
+  PatchDistanceCodesForBuggyDecoders(d_lengths);
+  return TryOptimizeHuffmanForRle(ctx, scratch, lz77, lstart, lend, ll_counts,
+                                  d_counts, ll_lengths, d_lengths);
+}
+
 static uint32_t GetDynamicLengths(const ZopfliContext* ctx,
                                 ZopfliKatajainenScratch* scratch,
                                 const ZopfliLZ77Store* lz77,
@@ -584,13 +632,23 @@ static uint32_t GetDynamicLengths(const ZopfliContext* ctx,
 
   ZopfliLZ77GetHistogram(lz77, lstart, lend, ll_counts, d_counts);
   ll_counts[256] = 1;  /* End symbol. */
-  ZopfliCalculateBitLengthsScratch(ctx, scratch, ll_counts, ZOPFLI_NUM_LL, 15,
-                                   ll_lengths);
-  ZopfliCalculateBitLengthsScratch(ctx, scratch, d_counts, ZOPFLI_NUM_D, 15,
-                                   d_lengths);
-  PatchDistanceCodesForBuggyDecoders(d_lengths);
-  return TryOptimizeHuffmanForRle(ctx, scratch, lz77, lstart, lend, ll_counts,
-                                  d_counts, ll_lengths, d_lengths);
+  return GetDynamicLengthsGivenCounts(ctx, scratch, lz77, lstart, lend,
+                                      ll_counts, d_counts,
+                                      ll_lengths, d_lengths);
+}
+
+uint32_t ZopfliCalculateBlockSizeGivenCounts(const ZopfliContext* ctx,
+                                             ZopfliKatajainenScratch* scratch,
+                                             const ZopfliLZ77Store* lz77,
+                                             size_t lstart, size_t lend,
+                                             const size_t* ll_counts,
+                                             const size_t* d_counts) {
+  unsigned ll_lengths[ZOPFLI_NUM_LL];
+  unsigned d_lengths[ZOPFLI_NUM_D];
+  /* 3 header bits, as in ZopfliCalculateBlockSizeScratch. */
+  return 3 + GetDynamicLengthsGivenCounts(ctx, scratch, lz77, lstart, lend,
+                                          ll_counts, d_counts,
+                                          ll_lengths, d_lengths);
 }
 
 uint32_t ZopfliCalculateBlockSizeScratch(const ZopfliContext* ctx,
