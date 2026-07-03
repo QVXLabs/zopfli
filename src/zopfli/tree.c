@@ -120,8 +120,14 @@ void ZopfliCalculateBitLengthsScratch(const ZopfliContext* ctx,
                                       unsigned* bitlengths) {
   int error = ZopfliLengthLimitedCodeLengthsScratch(
       ctx, scratch, count, (int)n, maxbits, bitlengths);
-  (void) error;
-  assert(!error);
+  /* No error channel here, and continuing would encode an all-zero (invalid)
+  Huffman code: fail loudly, like the allocator's out-of-memory policy.
+  Unreachable for in-tree inputs. */
+  if (error) {
+    fprintf(stderr, "zopfli: length-limited Huffman code construction "
+                    "failed (maxbits too small for symbol count)\n");
+    exit(EXIT_FAILURE);
+  }
 }
 
 void ZopfliCalculateBitLengths(const ZopfliContext* ctx, const size_t* count,

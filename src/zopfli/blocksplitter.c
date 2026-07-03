@@ -158,35 +158,21 @@ static void PrintBlockSplitPoints(const ZopfliContext* ctx,
                                   const ZopfliLZ77Store* lz77,
                                   const size_t* lz77splitpoints,
                                   size_t nlz77points) {
-  size_t* splitpoints = NULL;
-  size_t npoints = 0;
+  /* The input is given as lz77 indices; print the uncompressed byte offsets,
+  relative to the store's first symbol. */
+  size_t base = nlz77points > 0 ? ZopfliLZ77Pos(lz77, 0) : 0;
   size_t i;
-  /* The input is given as lz77 indices, but we want to see the uncompressed
-  index values. */
-  size_t pos = 0;
-  if (nlz77points > 0) {
-    for (i = 0; i < lz77->size; i++) {
-      size_t length = lz77->dists[i] == 0 ? 1 : lz77->litlens[i];
-      if (lz77splitpoints[npoints] == i) {
-        ZOPFLI_APPEND_DATA(ctx, pos, &splitpoints, &npoints);
-        if (npoints == nlz77points) break;
-      }
-      pos += length;
-    }
-  }
-  assert(npoints == nlz77points);
+  (void)ctx;
 
   fprintf(stderr, "block split points: ");
-  for (i = 0; i < npoints; i++) {
-    fprintf(stderr, "%zu ", splitpoints[i]);
+  for (i = 0; i < nlz77points; i++) {
+    fprintf(stderr, "%zu ", ZopfliLZ77Pos(lz77, lz77splitpoints[i]) - base);
   }
   fprintf(stderr, "(hex:");
-  for (i = 0; i < npoints; i++) {
-    fprintf(stderr, " %zx", splitpoints[i]);
+  for (i = 0; i < nlz77points; i++) {
+    fprintf(stderr, " %zx", ZopfliLZ77Pos(lz77, lz77splitpoints[i]) - base);
   }
   fprintf(stderr, ")\n");
-
-  ZopfliRealloc(ctx, splitpoints, 0);
 }
 
 /*
@@ -267,7 +253,8 @@ void ZopfliBlockSplitLZ77(const ZopfliOptions* options,
 
     origcost = EstimateCost(ctx, &scratch, lz77, lstart, lend);
 
-    if (splitcost > origcost || llpos == lstart + 1 || llpos == lend) {
+    /* FindMinimum returns a point in [lstart + 1, lend), per the asserts. */
+    if (splitcost > origcost || llpos == lstart + 1) {
       done[lstart] = 1;
     } else {
       AddSorted(ctx, llpos, splitpoints, npoints);
@@ -297,7 +284,6 @@ void ZopfliBlockSplit(const ZopfliOptions* options,
                       size_t maxblocks, size_t** splitpoints, size_t* npoints) {
   ZopfliContext ctxv;
   const ZopfliContext* ctx = &ctxv;
-  size_t pos = 0;
   size_t i;
   ZopfliBlockState s;
   size_t* lz77splitpoints = NULL;
@@ -324,16 +310,9 @@ void ZopfliBlockSplit(const ZopfliOptions* options,
                        &lz77splitpoints, &nlz77points);
 
   /* Convert LZ77 positions to positions in the uncompressed input. */
-  pos = instart;
-  if (nlz77points > 0) {
-    for (i = 0; i < store.size; i++) {
-      size_t length = store.dists[i] == 0 ? 1 : store.litlens[i];
-      if (lz77splitpoints[*npoints] == i) {
-        ZOPFLI_APPEND_DATA(ctx, pos, splitpoints, npoints);
-        if (*npoints == nlz77points) break;
-      }
-      pos += length;
-    }
+  for (i = 0; i < nlz77points; i++) {
+    ZOPFLI_APPEND_DATA(ctx, ZopfliLZ77Pos(&store, lz77splitpoints[i]),
+                       splitpoints, npoints);
   }
   assert(*npoints == nlz77points);
 

@@ -33,6 +33,10 @@ option(ZOPFLI_PIC "Build with position-independent code" OFF)
 # Line-coverage instrumentation (gcc/clang); use with the test suite.
 option(ZOPFLI_COVERAGE "Build with coverage instrumentation" OFF)
 
+# Address + undefined-behavior sanitizers (gcc/clang); use with a Debug build
+# so asserts stay live.
+option(ZOPFLI_SANITIZE "Build with ASan and UBSan" OFF)
+
 # Default ON; gtest is run directly, so include(CTest) is intentionally unused.
 if(NOT DEFINED BUILD_TESTING)
   set(BUILD_TESTING ON)
@@ -45,6 +49,10 @@ endif()
 if(ZOPFLI_COVERAGE)
   add_compile_options(--coverage -O0 -g)
   link_libraries(--coverage)
+endif()
+if(ZOPFLI_SANITIZE)
+  add_compile_options(-fsanitize=address,undefined -fno-sanitize-recover=all)
+  link_libraries(-fsanitize=address,undefined)
 endif()
 
 include(GNUInstallDirs)
@@ -206,6 +214,8 @@ if(BUILD_TESTING)
     test/fixedpoint_range_test.cc
     test/custom_allocator_test.cc
     test/version_test.cc
+    test/api_contract_test.cc
+    test/roundtrip_deflate_test.cc
   )
   target_link_libraries(zopfli_tests PRIVATE libzopfli GTest::gtest_main)
   set_target_properties(zopfli_tests PROPERTIES
@@ -220,6 +230,15 @@ if(BUILD_TESTING)
   if(ZLIB_FOUND)
     target_link_libraries(zopfli_tests PRIVATE ZLIB::ZLIB)
     target_compile_definitions(zopfli_tests PRIVATE ZOPFLI_TEST_HAVE_ZLIB)
+  endif()
+
+  # Register with ctest (CI also runs the gtest binary directly).
+  enable_testing()
+  add_test(NAME zopfli_tests COMMAND zopfli_tests)
+  if(UNIX)
+    add_test(NAME zopfli_cli
+      COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/test/cli_test.sh
+              $<TARGET_FILE:zopfli>)
   endif()
 endif()
 

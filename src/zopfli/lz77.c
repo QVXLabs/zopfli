@@ -305,7 +305,6 @@ void ZopfliInitBlockState(const ZopfliContext* ctx,
                           ZopfliBlockState* s) {
   s->ctx = ctx;
   s->blockstart = blockstart;
-  s->blockend = blockend;
   ZopfliInitKatajainenScratch(&s->katascratch);
   /* Squeeze working buffers; allocated lazily by ZopfliLZ77Optimal[Fixed]. */
   s->costs = NULL;
@@ -488,7 +487,7 @@ static int TryGetFromLongestMatchCache(ZopfliBlockState* s,
       (*limit == ZOPFLI_MAX_MATCH || lmclen <= *limit ||
       (sublen && maxsub >= *limit));
 
-  if (limit_ok_for_cache && cache_available) {
+  if (limit_ok_for_cache) {
     if (!sublen || lmclen <= maxsub) {
       *length = lmclen;
       if (*length > *limit) *length = (uint16_t)*limit;

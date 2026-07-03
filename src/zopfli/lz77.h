@@ -88,9 +88,9 @@ typedef struct ZopfliBlockState {
   ZopfliLongestMatchCache* lmc;
 #endif
 
-  /* The start (inclusive) and end (not inclusive) of the current block. */
+  /* The start of the current block; the longest-match cache is indexed
+  relative to it. */
   size_t blockstart;
-  size_t blockend;
 
   /* Reused scratch for length-limited Huffman code construction, so the hot
   block-size evaluations don't malloc/free per call. Per block state, so

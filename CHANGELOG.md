@@ -7,7 +7,29 @@ changes go under a new top section as they land.
 
 ## [Unreleased]
 
+### Fixed
+- Library: a negative `ZopfliOptions.numiterations` silently produced a
+  stream that inflates to less than the input in release builds (the
+  iteration loop never ran, emitting empty block bodies). Non-positive
+  values now select the auto default, matching the documented 0 semantics.
+- CLI: write failures (disk full, closed pipe) were ignored — truncated
+  output with exit status 0. `fwrite`/`fclose`/`fflush` are now checked and
+  any failure exits nonzero, as do missing input files and argument errors.
+- CLI: `--i` values are validated (`strtol`): junk suffixes like `--i5x`
+  (previously parsed as 5) and out-of-range counts (previously undefined
+  behavior via `atoi`, in practice an unbounded run) are rejected.
+- Internal: Huffman code-length construction errors are no longer swallowed
+  in release builds (they would encode an invalid all-zero code); the
+  encoder now fails loudly. Unreachable for valid inputs.
+
 ### Changed
+- Behavior-preserving simplifications (dead fields/conditions/temporaries,
+  deduplicated tree-combo selection and split-point conversion); output
+  verified bit-identical.
+- Tests: round-trip verification now runs in Linux CI (zlib installed); raw
+  DEFLATE round-trip coverage added; CLI error paths covered by a ctest
+  script; new `ZOPFLI_SANITIZE` CMake option and an ASan/UBSan CI job;
+  `enable_testing()` was missing, so `ctest` on a fresh clone ran nothing.
 - Memory reductions, output bit-identical. Peak RSS at `--i200` on 3 MB
   inputs (i9-8950HK): text 15.4 → 12.3 MB (−20%), incompressible binary
   63.7 → 45.6 MB (−28%). Internals: per-symbol LZ77 byte positions replaced

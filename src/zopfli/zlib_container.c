@@ -32,7 +32,7 @@ static unsigned adler32(const uint8_t* data, size_t size)
 {
   static const unsigned sums_overflow = 5550;
   unsigned s1 = 1;
-  unsigned s2 = 1 >> 16;
+  unsigned s2 = 0;
 
   while (size > 0) {
     size_t amount = ZOPFLI_MIN(size, sums_overflow);

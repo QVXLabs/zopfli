@@ -272,27 +272,41 @@ static size_t EncodeTree(const ZopfliContext* ctx,
   return result_size;
 }
 
+/*
+Sizes all 8 use_16/17/18 RLE combos and returns the index of the smallest
+(first wins ties), with its size in *bestsize.
+*/
+static int SelectBestTreeCombo(const ZopfliContext* ctx,
+                               ZopfliKatajainenScratch* scratch,
+                               const TreeLens* t, size_t* bestsize) {
+  int i;
+  int best = 0;
+  size_t bs = 0;
+
+  for (i = 0; i < 8; i++) {
+    size_t size = EncodeTree(ctx, scratch, t,
+                             i & 1, i & 2, i & 4,
+                             0, NULL);
+    if (bs == 0 || size < bs) {
+      bs = size;
+      best = i;
+    }
+  }
+  *bestsize = bs;
+  return best;
+}
+
 static void AddDynamicTree(const ZopfliContext* ctx,
                            ZopfliKatajainenScratch* scratch,
                            const unsigned* ll_lengths,
                            const unsigned* d_lengths,
                            uint8_t* bp, ZopfliBuf* buf) {
   TreeLens t;
-  int i;
-  int best = 0;
-  size_t bestsize = 0;
+  int best;
+  size_t bestsize;
 
   BuildTreeLens(ll_lengths, d_lengths, &t);
-  for(i = 0; i < 8; i++) {
-    size_t size = EncodeTree(ctx, scratch, &t,
-                             i & 1, i & 2, i & 4,
-                             0, NULL);
-    if (bestsize == 0 || size < bestsize) {
-      bestsize = size;
-      best = i;
-    }
-  }
-
+  best = SelectBestTreeCombo(ctx, scratch, &t, &bestsize);
   EncodeTree(ctx, scratch, &t,
              best & 1, best & 2, best & 4,
              bp, buf);
@@ -306,17 +320,10 @@ static size_t CalculateTreeSize(const ZopfliContext* ctx,
                                 const unsigned* ll_lengths,
                                 const unsigned* d_lengths) {
   TreeLens t;
-  size_t result = 0;
-  int i;
+  size_t result;
 
   BuildTreeLens(ll_lengths, d_lengths, &t);
-  for(i = 0; i < 8; i++) {
-    size_t size = EncodeTree(ctx, scratch, &t,
-                             i & 1, i & 2, i & 4,
-                             0, NULL);
-    if (result == 0 || size < result) result = size;
-  }
-
+  SelectBestTreeCombo(ctx, scratch, &t, &result);
   return result;
 }
 
@@ -789,7 +796,7 @@ static void AddLZ77Block(const ZopfliContext* ctx,
   unsigned d_lengths[ZOPFLI_NUM_D];
   unsigned ll_symbols[ZOPFLI_NUM_LL];
   unsigned d_symbols[ZOPFLI_NUM_D];
-  size_t detect_block_size = buf->size;
+  size_t detect_block_size;
   size_t compressed_size;
   size_t uncompressed_size = 0;
   size_t i;
@@ -1058,10 +1065,11 @@ void ZopfliDeflateBuf(const ZopfliOptions* options, int btype, int final,
   size_t offset = buf->size;
   ZopfliContext ctx;
   ctx.options = *options;
-  assert(ctx.options.numiterations >= 0);
-  if (ctx.options.numiterations == 0)
+  /* <= 0 selects the auto default; a negative count would otherwise run zero
+  squeeze iterations and silently emit empty block bodies. */
+  if (ctx.options.numiterations <= 0)
     ctx.options.numiterations = AutoIterations(insize);
-  if (ctx.options.verbose && options->numiterations == 0) {
+  if (ctx.options.verbose && options->numiterations <= 0) {
     fprintf(stderr, "Auto iterations: %d (input %zu bytes)\n",
             ctx.options.numiterations, insize);
   }

@@ -290,7 +290,8 @@ int ZopfliLengthLimitedCodeLengthsScratch(
     ZopfliRealloc(ctx, scratch->lists, 0);
     scratch->lists =
         ZopfliRealloc(ctx, NULL, (size_t)maxbits * 2 * sizeof(Node*));
-    scratch->lists_cap = scratch->lists ? (size_t)maxbits : 0;
+    /* ZopfliRealloc aborts on failure, so the allocation always succeeded. */
+    scratch->lists_cap = (size_t)maxbits;
   }
   lists = (Node* (*)[2])scratch->lists;
   InitLists(&pool, leaves, maxbits, lists);

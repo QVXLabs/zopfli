@@ -50,7 +50,8 @@ typedef struct ZopfliOptions {
 
   /*
   Times to rerun the LZ77 optimization pass. 0 (default) = auto: a size-
-  dependent count, larger for larger inputs. A value > 0 forces that fixed count.
+  dependent count, larger for larger inputs. A value > 0 forces that fixed
+  count. Negative values are treated as 0 (auto).
   */
   int numiterations;
 

@@ -29,6 +29,11 @@ jobs:
         with:
           submodules: recursive
 
+      # zlib enables the round-trip (compress -> inflate -> compare) tests,
+      # which self-skip without it.
+      - name: Install zlib
+        run: sudo apt-get update && sudo apt-get install -y zlib1g-dev
+
       - name: Configure
         run: >
           cmake -S . -B build
@@ -39,7 +44,34 @@ jobs:
         run: cmake --build build --config ${{ matrix.build_type }} -j
 
       - name: Test
-        run: ./build/zopfli_tests
+        run: ctest --test-dir build --output-on-failure
 
       - name: Makefile build
         run: make
+
+  sanitize:
+    name: clang / Debug + ASan/UBSan
+    runs-on: ubuntu-latest
+    env:
+      CC: clang
+      CXX: clang++
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install zlib
+        run: sudo apt-get update && sudo apt-get install -y zlib1g-dev
+
+      - name: Configure
+        run: >
+          cmake -S . -B build
+          -DCMAKE_BUILD_TYPE=Debug
+          -DBUILD_TESTING=ON
+          -DZOPFLI_SANITIZE=ON
+
+      - name: Build
+        run: cmake --build build -j
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure

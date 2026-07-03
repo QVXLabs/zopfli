@@ -261,7 +261,6 @@ static ZopfliCost GetBestLengths(ZopfliBlockState *s,
   uint16_t sublen[259];
   size_t windowstart = instart > ZOPFLI_WINDOW_SIZE
       ? instart - ZOPFLI_WINDOW_SIZE : 0;
-  ZopfliCost result;
   ZopfliCost mincost = cache->mincost;
   ZopfliCost mincostaddcostj;
 
@@ -318,8 +317,8 @@ static ZopfliCost GetBestLengths(ZopfliBlockState *s,
     }
 #endif
 
-    /* Literal. */
-    if (i + 1 <= inend) {
+    /* Literal. i < inend here, so j + 1 <= blocksize stays in bounds. */
+    {
       ZopfliCost newCost = cache->lit_cost[in[i]] + costs[j];
       assert(newCost >= 0);
       if (newCost < costs[j + 1]) {
@@ -394,9 +393,7 @@ static ZopfliCost GetBestLengths(ZopfliBlockState *s,
   }
 
   assert(costs[blocksize] >= 0);
-  result = costs[blocksize];
-
-  return result;
+  return costs[blocksize];
 }
 
 /*
@@ -668,7 +665,6 @@ void ZopfliLZ77OptimalFixed(ZopfliBlockState *s,
   AllocBlockBuffers(s, blocksize);
 
   s->blockstart = instart;
-  s->blockend = inend;
 
   /* Shortest path for fixed tree This one should give the shortest possible
   result for fixed tree, no repeated runs are needed since the tree is known. */
