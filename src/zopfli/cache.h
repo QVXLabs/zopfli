@@ -48,7 +48,11 @@ typedef struct ZopfliLongestMatchCache {
   uint8_t* pool;  /* Shared run pool, 3 bytes per run. */
   unsigned* run_off;  /* Per pos: first run index in pool, or LMC_NO_SUBLEN. */
   size_t pool_used;  /* Next free run slot. */
-  size_t pool_cap;  /* Pool capacity in runs. */
+  size_t pool_alloc;  /* Allocated pool slots; grows on demand up to pool_cap
+      (typical blocks use ~1.5 runs/pos, far below the budget, so allocating
+      the full budget up front would waste most of it). */
+  size_t pool_cap;  /* Pool budget in runs; overflowing it disables caching
+      for the position (all_complete = 0). */
   int all_complete;  /* 1 while every cached position has its full sublen. */
 } ZopfliLongestMatchCache;
 
@@ -59,8 +63,10 @@ void ZopfliInitCache(const ZopfliContext* ctx, size_t blocksize,
 /* Frees up the memory of the ZopfliLongestMatchCache. */
 void ZopfliCleanCache(const ZopfliContext* ctx, ZopfliLongestMatchCache* lmc);
 
-/* Stores sublen array in the cache. */
-void ZopfliSublenToCache(const uint16_t* sublen,
+/* Stores sublen array in the cache. ctx is needed because the run pool grows
+on demand. */
+void ZopfliSublenToCache(const ZopfliContext* ctx,
+                         const uint16_t* sublen,
                          size_t pos, size_t length,
                          ZopfliLongestMatchCache* lmc);
 
