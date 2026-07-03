@@ -52,9 +52,21 @@ TEST(Katajainen, ManySymbolsSatisfyKraft) {
 TEST(Katajainen, MaxBitsTooSmallIsError) {
   // 5 symbols cannot be coded with a max length of 2 bits.
   size_t freqs[5] = {1, 1, 1, 1, 1};
-  unsigned bitlengths[5] = {0};
+  unsigned bitlengths[5] = {1, 1, 1, 1, 1};
   EXPECT_EQ(ZopfliLengthLimitedCodeLengths(kCtx, freqs, 5, 2, bitlengths),
             1);
+  // The error contract: outputs are defined (all zero), never partial.
+  for (int i = 0; i < 5; i++) EXPECT_EQ(bitlengths[i], 0u);
+}
+
+TEST(KatajainenDeathTest, WrapperTerminatesOnError) {
+  // The wrapper has no error channel, so it must terminate loudly. Release
+  // builds used to swallow the error and encode an all-zero (invalid) code.
+  size_t freqs[19];
+  unsigned bitlengths[19];
+  for (int i = 0; i < 19; i++) freqs[i] = (size_t)(i + 1);
+  EXPECT_DEATH(ZopfliCalculateBitLengths(kCtx, freqs, 19, 3, bitlengths),
+               "");
 }
 
 TEST(Katajainen, ZeroFrequencySymbolsIgnored) {

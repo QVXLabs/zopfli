@@ -1,8 +1,6 @@
 #!/bin/sh
 # CLI error-path tests. Usage: cli_test.sh /path/to/zopfli
-# Each case prints PASS/FAIL; exits nonzero if any case fails.
-# These cases expose (pre-fix) silently-ignored failures: junk/overflowing
-# --i values accepted, missing input files and write errors exiting 0.
+# Prints PASS/FAIL per case; exits nonzero if any case fails.
 set -u
 
 ZOPFLI=$1
@@ -20,8 +18,8 @@ while [ $i -lt 200 ]; do
   i=$((i+1))
 done > "$TMPDIR_T/in.txt"
 
-# An incompressible input whose compressed size exceeds any pipe buffer, so
-# a closed pipe actually makes the output fwrite fail.
+# Incompressible input: output exceeds any pipe buffer, so a closed pipe
+# makes the output write fail.
 dd if=/dev/urandom of="$TMPDIR_T/big.bin" bs=1024 count=300 2> /dev/null
 
 # 1. Junk suffix in --i must be rejected, not silently parsed as a prefix.
@@ -61,12 +59,10 @@ else
   pass "no-filename invocation rejected"
 fi
 
-# 6. Write failure on stdout (EPIPE with SIGPIPE ignored) must be detected.
-# The subshell ignores SIGPIPE; the exec'd child inherits that disposition,
-# so fwrite fails with EPIPE instead of the process being killed. The reader
-# takes 1 byte and closes; the ~300 KB output cannot fit any pipe buffer, so
-# the write must fail. A fifo is used because POSIX sh has no PIPESTATUS to
-# read the left side of a pipeline.
+# 6. Write failure on stdout must be detected. The exec'd child inherits the
+# ignored SIGPIPE, so the write fails with EPIPE instead of killing the
+# process. A fifo captures the compressor's exit code (POSIX sh has no
+# PIPESTATUS).
 mkfifo "$TMPDIR_T/fifo"
 head -c 1 < "$TMPDIR_T/fifo" > /dev/null &
 headpid=$!

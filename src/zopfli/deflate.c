@@ -1058,9 +1058,8 @@ void ZopfliDeflateBuf(const ZopfliOptions* options, int btype, int final,
   size_t offset = buf->size;
   ZopfliContext ctx;
   ctx.options = *options;
-  /* Any non-positive value selects the auto default. Without this guard a
-  negative count would run zero squeeze iterations, emitting blocks with an
-  empty body: a structurally valid stream that silently loses the data. */
+  /* <= 0 selects the auto default; a negative count would otherwise run zero
+  squeeze iterations and silently emit empty block bodies. */
   if (ctx.options.numiterations <= 0)
     ctx.options.numiterations = AutoIterations(insize);
   if (ctx.options.verbose && options->numiterations <= 0) {

@@ -107,9 +107,9 @@ static int LoadFile(const char* filename,
 }
 
 /*
-Saves a file from a memory array, overwriting the file if it existed. Returns
-1 on success, 0 on any write error (the buffered data may only fail at
-fclose, so its result matters too).
+Saves a file from a memory array, overwriting the file if it existed.
+Returns 1 on success, 0 on any write error (buffered writes can fail as
+late as fclose).
 */
 static int SaveFile(const char* filename,
                     const uint8_t* in, size_t insize) {

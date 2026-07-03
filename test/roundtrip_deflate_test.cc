@@ -6,12 +6,10 @@ namespace {
 
 #ifdef ZOPFLI_TEST_HAVE_ZLIB
 
-// Raw DEFLATE (window_bits -15) round-trips. gzip and zlib are covered by
-// FixedPointRange.CompressRoundTrip; the raw format shares the deflate body
-// but has no container framing to hide bit-level mistakes at the tail.
+// Raw DEFLATE round-trips (gzip/zlib are covered elsewhere; the raw format
+// has no container framing to hide bit-level mistakes at the tail).
 TEST(RoundTrip, DeflateRawSizes) {
-  // Cross the stored-block chunk limit (65535) and the 1 MB master-block
-  // boundary; include the empty input.
+  // Crosses the 65535 stored-chunk limit and the 1 MB master-block boundary.
   const size_t sizes[] = {0, 1, 300, 65535, 65536, 1000000, 1000001};
   for (size_t size : sizes) {
     SCOPED_TRACE(size);

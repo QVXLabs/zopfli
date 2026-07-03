@@ -4,11 +4,9 @@
 
 namespace {
 
-// A caller passing a negative numiterations (out of contract, but easy to
-// reach from the C API) must not lose data. Before the fix, the iteration
-// loop in ZopfliLZ77Optimal never ran, so blocks were emitted with an empty
-// body: a structurally valid stream that inflates to less than the input.
-// In assert-enabled builds the old code aborted instead.
+// Negative numiterations must not lose data. It used to run zero squeeze
+// iterations, emitting valid-looking blocks with empty bodies (assert-enabled
+// builds aborted instead).
 #ifdef ZOPFLI_TEST_HAVE_ZLIB
 TEST(ApiContract, NegativeIterationsRoundTrips) {
   // Compressible content across a couple of blocks' worth of data.
