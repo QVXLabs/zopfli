@@ -34,11 +34,14 @@ void ZopfliInitCache(const ZopfliContext* ctx, size_t blocksize,
   lmc->dist = (uint16_t*)ZopfliRealloc(ctx, NULL, sizeof(uint16_t) * blocksize);
   lmc->run_off =
       (unsigned*)ZopfliRealloc(ctx, NULL, sizeof(unsigned) * blocksize);
-  /* Same byte budget as the old fixed cache, used now as a shared run pool. */
+  /* Same byte budget as the old fixed cache, used now as a shared run pool.
+  Only a small initial allocation is made; ZopfliSublenToCache grows it on
+  demand toward the budget. */
   lmc->pool_cap = (size_t)ZOPFLI_CACHE_LENGTH * blocksize;
   lmc->pool_used = 0;
+  lmc->pool_alloc = ZOPFLI_MIN(lmc->pool_cap, 1024);
   lmc->all_complete = 1;
-  lmc->pool = (uint8_t*)ZopfliRealloc(ctx, NULL, 3 * lmc->pool_cap);
+  lmc->pool = (uint8_t*)ZopfliRealloc(ctx, NULL, 3 * lmc->pool_alloc);
   /* For an empty block (blocksize 0) the arrays above are zero-size and stay
   NULL; nothing below reads them. Real allocation failures abort inside
   ZopfliRealloc, so no out-of-memory check is needed here. */
@@ -61,7 +64,8 @@ void ZopfliCleanCache(const ZopfliContext* ctx, ZopfliLongestMatchCache* lmc) {
   ZopfliRealloc(ctx, lmc->run_off, 0);
 }
 
-void ZopfliSublenToCache(const uint16_t* sublen,
+void ZopfliSublenToCache(const ZopfliContext* ctx,
+                         const uint16_t* sublen,
                          size_t pos, size_t length,
                          ZopfliLongestMatchCache* lmc) {
   size_t i;
@@ -76,8 +80,8 @@ void ZopfliSublenToCache(const uint16_t* sublen,
   if (length < 3) return;
 
   /* Emit runs in a single sublen pass, straight into the pool's free space.
-  On overflow nothing is committed (pool_used is unchanged and free-slot
-  contents are never read), same as the position never fitting. */
+  On overflow of the budget nothing is committed (pool_used is unchanged and
+  free-slot contents are never read), same as the position never fitting. */
   avail = lmc->pool_cap - lmc->pool_used;
   run = &lmc->pool[lmc->pool_used * 3];
   for (i = 3; i <= length; i++) {
@@ -89,6 +93,15 @@ void ZopfliSublenToCache(const uint16_t* sublen,
         lmc->all_complete = 0;
         lmc->run_off[pos] = LMC_NO_SUBLEN;
         return;
+      }
+      if (lmc->pool_used + nruns == lmc->pool_alloc) {
+        /* Grow the allocation toward the budget; the budget check above is
+        what decides overflow, so growth never changes behavior. */
+        size_t newalloc = ZOPFLI_GROW_CAP(lmc->pool_alloc);
+        if (newalloc > lmc->pool_cap) newalloc = lmc->pool_cap;
+        lmc->pool = (uint8_t*)ZopfliRealloc(ctx, lmc->pool, 3 * newalloc);
+        lmc->pool_alloc = newalloc;
+        run = &lmc->pool[(lmc->pool_used + nruns) * 3];
       }
       run[0] = (uint8_t)(i - 3);
       run[1] = sublen[i] & 0xff;

@@ -8,6 +8,16 @@ changes go under a new top section as they land.
 ## [Unreleased]
 
 ### Changed
+- Memory reductions, output bit-identical. Peak RSS at `--i200` on 3 MB
+  inputs (i9-8950HK): text 15.4 → 12.3 MB (−20%), incompressible binary
+  63.7 → 45.6 MB (−28%). Internals: per-symbol LZ77 byte positions replaced
+  by sparse chunk checkpoints (8 bytes per symbol saved per resident store),
+  cumulative store histograms allocated only on first use, the longest-match
+  cache's run pool grown on demand instead of allocated at its full budget
+  up front (also a large allocated-footprint cut for small devices), and no
+  longest-match cache for the single-pass fixed-tree squeeze (it was written
+  but never read). Costs ~1-2% speed on text at matched settings; measured
+  ~6% faster on incompressible input.
 - Further hot-path performance work; compressed output is bit-identical in
   every configuration. Measured on an i9-8950HK: ~9% faster at the default
   iteration count and ~8% at `--i200` on text, ~12% faster on incompressible
