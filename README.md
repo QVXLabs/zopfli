@@ -13,9 +13,9 @@ or gzip library.
 This fork is a **drop-in replacement** that is faster, leaner, and
 deterministic:
 
-- **~1.9× faster** on text and **~2.5–3.5× faster** on incompressible data at a
+- **~2.1× faster** on text and **~3.7–4.1× faster** on incompressible data at a
   matched iteration count.
-- **34–38% lower** peak memory.
+- **45–62% lower** peak memory.
 - **Bit-identical output across every CPU, compiler, and floating-point mode**,
   with no `libm`/FPU dependency — it runs on FPU-less microcontrollers. (Upstream
   zopfli's output varies by platform.)
@@ -79,19 +79,19 @@ This fork is a drop-in replacement — it emits standard DEFLATE/zlib/gzip that 
 existing decoder reads — but differs from upstream zopfli in four ways. Each is
 detailed in its own section below; the highlights:
 
-**Faster.** At a matched iteration count the optimal parse is **~1.9× faster
-than stock zopfli on text and ~2.5–3.5× on incompressible data**:
+**Faster.** At a matched iteration count the optimal parse is **~2.1× faster
+than stock zopfli on text and ~3.7–4.1× on incompressible data**:
 
 | Input    | Stock zopfli | QVXLabs/Zopfli | Speedup | Default `--i` | QVXLabs/Zopfli (default) |
 |----------|-------------:|---------------:|:-------:|:-------------:|-------------------------:|
-| 256 KB text   |   0.90 s |   0.47 s | 1.9× | 106 |   1.60 s |
-| 1 MB text     |   2.71 s |   1.40 s | 1.9× | 130 |   6.56 s |
-| 3 MB text     |   8.13 s |   4.22 s | 1.9× | 142 |  21.33 s |
-| 10 MB text    |  27.16 s |  13.98 s | 1.9× | 166 |  82.50 s |
-| 256 KB binary |   0.36 s |   0.12 s | 2.9× | 106 |   0.42 s |
-| 1 MB binary   |   1.58 s |   0.63 s | 2.5× | 130 |   2.01 s |
-| 3 MB binary   |   5.69 s |   1.61 s | 3.5× | 142 |   6.44 s |
-| 10 MB binary  |  16.46 s |   5.06 s | 3.3× | 166 |  24.58 s |
+| 256 KB text   |   0.91 s |   0.42 s | 2.2× | 106 |   1.42 s |
+| 1 MB text     |   2.77 s |   1.34 s | 2.1× | 130 |   6.08 s |
+| 3 MB text     |   8.07 s |   3.91 s | 2.1× | 142 |  19.75 s |
+| 10 MB text    |  27.06 s |  13.05 s | 2.1× | 166 |  75.73 s |
+| 256 KB binary |   0.33 s |   0.09 s | 3.7× | 106 |   0.32 s |
+| 1 MB binary   |   1.38 s |   0.34 s | 4.1× | 130 |   1.43 s |
+| 3 MB binary   |   4.29 s |   1.08 s | 4.0× | 142 |   4.66 s |
+| 10 MB binary  |  14.16 s |   3.56 s | 4.0× | 166 |  17.70 s |
 
 <sub>Measured on an Intel Core i9-8950HK (Coffee Lake), release `-O3 -DNDEBUG`.
 The `Stock zopfli`/`QVXLabs/Zopfli`/`Speedup` columns are at a matched 15
@@ -106,7 +106,7 @@ both encoders at `--i15` to isolate the per-iteration win. The fork's default is
 no longer a fixed 15, though: `--i0` (auto) scales the pass count with input
 size (106 → 166 from 256 KB → 10 MB), so at **default** settings it does several
 times more work and its wall-clock (the `QVXLabs/Zopfli (default)` column) is
-*higher* than stock's fixed `--i15` — e.g. 82.5 s vs 27.2 s on 10 MB text. That
+*higher* than stock's fixed `--i15` — e.g. 75.7 s vs 27.1 s on 10 MB text. That
 buys a slightly smaller file on inputs whose ratio gains have a long tail; pass
 an explicit `--i#` to cap runtime (`--i15` for stock-like speed). See the
 **Iterations** section below.
@@ -130,14 +130,16 @@ defines a new canonical, platform-independent encoding. See the
 
 **Lower memory.** Hot data structures were trimmed to what the data actually
 needs — 16-bit hash tables (right-sized to the used bucket count), 32-bit LZ77
-cumulative histograms, and dropping two precomputed per-symbol arrays that are
-cheaply recomputed on the fly — so peak resident memory is well below stock
-zopfli's. Measured peak RSS (`/usr/bin/time -l`, 3 MB input, `--i200`):
+cumulative histograms, per-symbol byte positions replaced by sparse
+checkpoints, histograms and the match-cache pool materialized only on demand,
+and dropping precomputed per-symbol arrays that are cheaply recomputed on the
+fly — so peak resident memory is well below stock zopfli's. Measured peak RSS
+(`/usr/bin/time -l`, 3 MB input, `--i200`):
 
 | Input                         | Stock zopfli | QVXLabs/Zopfli | Saved          |
 |-------------------------------|-------------:|---------------:|:--------------:|
-| Text (~3 MB)                  |   23.1 MB    |    15.2 MB     | 7.9 MB (−34%)  |
-| Incompressible binary (~3 MB) |  122.5 MB    |    75.4 MB     | 47.1 MB (−38%) |
+| Text (~3 MB)                  |   22.4 MB    |    12.3 MB     | 10.1 MB (−45%) |
+| Incompressible binary (~3 MB) |  121.3 MB    |    46.5 MB     | 74.8 MB (−62%) |
 
 Incompressible input has ~1 LZ77 symbol per byte, so the per-symbol arrays — and
 thus the savings — are largest there; text compresses to fewer symbols.
@@ -198,16 +200,16 @@ The table below compresses ~415 KB of text at various **fixed** `--i#` counts
 
 | Iterations (`--i`) | Compressed size | Reduction vs `--i15` | Relative runtime |
 |:------------------:|----------------:|:--------------------:|:----------------:|
-| 5                  |   101,322 bytes | −0.03% (**worse**)   |      ~0.8×        |
-| 15                 |   101,292 bytes | —                    |        1×        |
-| 30                 |   101,279 bytes | 0.01%                |       ~1.4×       |
-| 50                 |   101,281 bytes | 0.01%                |       ~2.2×       |
-| 100                |   101,266 bytes | 0.03%                |       ~3.3×       |
-| 200                |   101,264 bytes | 0.03%                |       ~6.2×       |
-| 500                |   101,257 bytes | 0.03%                |       ~14×        |
-| 1000               |   101,225 bytes | 0.07%                |       ~28×        |
+| 5                  |   102,681 bytes | −0.05% (**worse**)   |      ~0.8×        |
+| 15                 |   102,634 bytes | —                    |        1×        |
+| 30                 |   102,640 bytes | −0.01% (**worse**)   |       ~1.4×       |
+| 50                 |   102,626 bytes | 0.01%                |       ~1.8×       |
+| 100                |   102,600 bytes | 0.03%                |       ~3.1×       |
+| 200                |   102,575 bytes | 0.06%                |       ~5.5×       |
+| 500                |   102,582 bytes | 0.05%                |       ~13×        |
+| 1000               |   102,575 bytes | 0.06%                |       ~25×        |
 
-Takeaways: `--i15` already captures all but ~0.07% of what `--i1000` achieves;
+Takeaways: `--i15` already captures all but ~0.06% of what `--i1000` achieves;
 that thin tail is the *entire* remaining headroom from iterations, and most of it
 lands in the first ~8 passes. `--i5` hasn't converged (output is larger). The
 longest-match cache makes passes after the first cheap, so the runtime cost of
