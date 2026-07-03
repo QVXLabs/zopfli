@@ -436,11 +436,12 @@ static int TryGetFromLongestMatchCache(ZopfliBlockState* s,
 
   if (!lmc) return 0;
   lmclen = lmc->length[lmcpos];
-  maxsub = ZopfliMaxCachedSublen(lmc, lmcpos, lmclen);
 
   /* Length > 0 and dist 0 is invalid combination, which indicates on purpose
-     that this cache value is not filled in yet. */
+     that this cache value is not filled in yet. Only then is run_off[lmcpos]
+     defined, so ZopfliMaxCachedSublen must stay behind the check. */
   cache_available = lmclen == 0 || lmc->dist[lmcpos] != 0;
+  maxsub = cache_available ? ZopfliMaxCachedSublen(lmc, lmcpos, lmclen) : 0;
   limit_ok_for_cache = cache_available &&
       (*limit == ZOPFLI_MAX_MATCH || lmclen <= *limit ||
       (sublen && maxsub >= *limit));
