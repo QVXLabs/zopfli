@@ -33,6 +33,10 @@ option(ZOPFLI_PIC "Build with position-independent code" OFF)
 # Line-coverage instrumentation (gcc/clang); use with the test suite.
 option(ZOPFLI_COVERAGE "Build with coverage instrumentation" OFF)
 
+# Address + undefined-behavior sanitizers (gcc/clang); use with a Debug build
+# so asserts stay live.
+option(ZOPFLI_SANITIZE "Build with ASan and UBSan" OFF)
+
 # Default ON; gtest is run directly, so include(CTest) is intentionally unused.
 if(NOT DEFINED BUILD_TESTING)
   set(BUILD_TESTING ON)
@@ -45,6 +49,10 @@ endif()
 if(ZOPFLI_COVERAGE)
   add_compile_options(--coverage -O0 -g)
   link_libraries(--coverage)
+endif()
+if(ZOPFLI_SANITIZE)
+  add_compile_options(-fsanitize=address,undefined -fno-sanitize-recover=all)
+  link_libraries(-fsanitize=address,undefined)
 endif()
 
 include(GNUInstallDirs)
