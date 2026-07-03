@@ -32,6 +32,66 @@ TEST(Lz77, StoreAppendCopyByteRange) {
   ZopfliCleanLZ77Store(ZopfliDefaultContext(), &c);
 }
 
+TEST(Lz77, PosCheckpointsAcrossChunkBoundaries) {
+  // Positions are stored as sparse checkpoints (one per ZOPFLI_POS_CHUNK
+  // symbols) and derived in between, so verify every index against
+  // independently tracked positions across several chunk boundaries, with a
+  // non-zero start position and varying symbol byte-lengths.
+  const size_t nsymbols = 2 * ZOPFLI_POS_CHUNK + 90;
+  const size_t start = 7;
+  std::vector<unsigned char> data(64, 'a');
+  std::vector<size_t> expected;
+  ZopfliLZ77Store store;
+  ZopfliInitLZ77Store(data.data(), &store);
+
+  size_t pos = start;
+  for (size_t i = 0; i < nsymbols; i++) {
+    expected.push_back(pos);
+    if (i % 3 == 0) {
+      // Literal: advances by 1 byte.
+      ZopfliStoreLitLenDist(ZopfliDefaultContext(),
+                            (unsigned short)(i % 256), 0, pos, &store);
+      pos += 1;
+    } else {
+      // Match: advances by its length.
+      unsigned short length = (unsigned short)(3 + i % 20);
+      unsigned short dist = (unsigned short)(1 + i % 30);
+      ZopfliStoreLitLenDist(ZopfliDefaultContext(), length, dist, pos, &store);
+      pos += length;
+    }
+  }
+  ASSERT_EQ(store.size, nsymbols);
+
+  for (size_t i = 0; i < nsymbols; i++) {
+    EXPECT_EQ(ZopfliLZ77Pos(&store, i), expected[i]) << "at symbol " << i;
+  }
+  // Byte ranges, including chunk-boundary-straddling and empty ones.
+  EXPECT_EQ(ZopfliLZ77GetByteRange(&store, 0, store.size), pos - start);
+  EXPECT_EQ(ZopfliLZ77GetByteRange(&store, ZOPFLI_POS_CHUNK - 1,
+                                   ZOPFLI_POS_CHUNK + 1),
+            expected[ZOPFLI_POS_CHUNK + 1] - expected[ZOPFLI_POS_CHUNK - 1]);
+  EXPECT_EQ(ZopfliLZ77GetByteRange(&store, 10, 2 * ZOPFLI_POS_CHUNK + 1),
+            expected[2 * ZOPFLI_POS_CHUNK + 1] - expected[10]);
+  EXPECT_EQ(ZopfliLZ77GetByteRange(&store, ZOPFLI_POS_CHUNK,
+                                   ZOPFLI_POS_CHUNK), 0u);
+
+  // Checkpoints must survive a copy and an append (which re-derives them).
+  ZopfliLZ77Store copy;
+  ZopfliInitLZ77Store(data.data(), &copy);
+  ZopfliCopyLZ77Store(ZopfliDefaultContext(), &store, &copy);
+  ZopfliLZ77Store appended;
+  ZopfliInitLZ77Store(data.data(), &appended);
+  ZopfliAppendLZ77Store(ZopfliDefaultContext(), &store, &appended);
+  for (size_t i = 0; i < nsymbols; i += ZOPFLI_POS_CHUNK / 2) {
+    EXPECT_EQ(ZopfliLZ77Pos(&copy, i), expected[i]) << "copy at " << i;
+    EXPECT_EQ(ZopfliLZ77Pos(&appended, i), expected[i]) << "append at " << i;
+  }
+
+  ZopfliCleanLZ77Store(ZopfliDefaultContext(), &store);
+  ZopfliCleanLZ77Store(ZopfliDefaultContext(), &copy);
+  ZopfliCleanLZ77Store(ZopfliDefaultContext(), &appended);
+}
+
 TEST(Lz77, Histogram) {
   std::vector<unsigned char> in = zopfli_test::Bytes(
       "abcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabc");
