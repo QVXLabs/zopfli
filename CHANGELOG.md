@@ -5,7 +5,7 @@ All notable changes to this project are documented here. The format is based on
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). New
 changes go under a new top section as they land.
 
-## [Unreleased]
+## [1.1.1] - 2026-07-02
 
 ### Fixed
 - Library: a negative `ZopfliOptions.numiterations` silently produced a
