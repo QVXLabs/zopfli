@@ -217,8 +217,11 @@ void ZopfliAppendLZ77Store(const ZopfliContext* ctx,
 
 size_t ZopfliLZ77Pos(const ZopfliLZ77Store* lz77, size_t lpos) {
   size_t i = lpos - lpos % ZOPFLI_POS_CHUNK;
-  size_t pos = lz77->pos_chunks[lpos / ZOPFLI_POS_CHUNK];
+  size_t pos;
+  /* Check the precondition before pos_chunks is indexed with it, so a bad
+  lpos fails the assert instead of reading out of bounds. */
   assert(lpos < lz77->size);
+  pos = lz77->pos_chunks[lpos / ZOPFLI_POS_CHUNK];
   for (; i < lpos; i++) {
     pos += lz77->dists[i] == 0 ? 1 : lz77->litlens[i];
   }
