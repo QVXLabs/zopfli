@@ -57,9 +57,13 @@ typedef struct ZopfliLZ77Store {
   /* Cumulative histograms wrapping around per chunk. Each chunk has the amount
   of distinct symbols as length, so using 1 value per LZ77 symbol, we have a
   precise histogram at every N symbols, and the rest can be calculated by
-  looping through the actual symbols of this chunk. */
+  looping through the actual symbols of this chunk. Maintained lazily: only the
+  first counts_size symbols are materialized; ZopfliLZ77GetHistogram fills the
+  rest on demand. Keeps the per-iteration squeeze refills, whose block sizes
+  are evaluated from a caller-side histogram, from paying for maintenance. */
   uint32_t* ll_counts;
   uint32_t* d_counts;
+  size_t counts_size;
 } ZopfliLZ77Store;
 
 /*
@@ -87,11 +91,11 @@ typedef struct ZopfliBlockState {
   /* Optimal-parse working buffers for the squeeze pass. Allocated once per
   ZopfliLZ77Optimal[Fixed] call and reused across its iterations; carried here
   so the DP helpers reach them via the block state instead of long parameter
-  lists. costs/length_array/dist_array are sized to the block (blocksize + 1);
-  path is the traced result, grown on demand. */
+  lists. costs/lendist_array are sized to the block (blocksize + 1); each
+  lendist entry packs (dist << 16) | length so the DP's improvement case is a
+  single store. path is the traced result, grown on demand. */
   ZopfliCost* costs;
-  uint16_t* length_array;
-  uint16_t* dist_array;
+  uint32_t* lendist_array;
   uint16_t* path;
   size_t pathsize;
   size_t pathcap;
@@ -146,10 +150,16 @@ void ZopfliFindLongestMatch(
     uint16_t* sublen, uint16_t* distance, uint16_t* length);
 
 /*
-Verifies if length and dist are indeed valid, only used for assertion.
+Verifies if length and dist are indeed valid, only used for assertion. Under
+NDEBUG the whole call (a per-match cross-TU call+ret on hot paths) compiles
+away, matching the asserts it carries.
 */
+#ifndef NDEBUG
 void ZopfliVerifyLenDist(const uint8_t* data, size_t datasize, size_t pos,
                          uint16_t dist, uint16_t length);
+#else
+#define ZopfliVerifyLenDist(data, datasize, pos, dist, length) ((void)0)
+#endif
 
 /*
 Does LZ77 using an algorithm similar to gzip, with lazy matching, rather than
