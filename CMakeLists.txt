@@ -223,6 +223,15 @@ if(BUILD_TESTING)
     target_link_libraries(zopfli_tests PRIVATE ZLIB::ZLIB)
     target_compile_definitions(zopfli_tests PRIVATE ZOPFLI_TEST_HAVE_ZLIB)
   endif()
+
+  # Register with ctest (CI also runs the gtest binary directly).
+  enable_testing()
+  add_test(NAME zopfli_tests COMMAND zopfli_tests)
+  if(UNIX)
+    add_test(NAME zopfli_cli
+      COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/test/cli_test.sh
+              $<TARGET_FILE:zopfli>)
+  endif()
 endif()
 
 #

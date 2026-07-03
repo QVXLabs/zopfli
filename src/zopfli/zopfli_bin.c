@@ -31,6 +31,8 @@ decompressor.
 #endif
 
 #include <assert.h>
+#include <errno.h>
+#include <limits.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -80,7 +82,8 @@ static int LoadFile(const char* filename,
   it caps near 4 GB. */
   if ((unsigned long long)filesize > (unsigned long long)SIZE_MAX) {
     fprintf(stderr, "File too large to load into memory on this build.\n");
-    exit(EXIT_FAILURE);
+    fclose(file);
+    return 0;
   }
   *outsize = (size_t)filesize;
 
@@ -104,46 +107,61 @@ static int LoadFile(const char* filename,
 }
 
 /*
-Saves a file from a memory array, overwriting the file if it existed.
+Saves a file from a memory array, overwriting the file if it existed. Returns
+1 on success, 0 on any write error (the buffered data may only fail at
+fclose, so its result matters too).
 */
-static void SaveFile(const char* filename,
-                     const uint8_t* in, size_t insize) {
+static int SaveFile(const char* filename,
+                    const uint8_t* in, size_t insize) {
   FILE* file = fopen(filename, "wb" );
   if (file == NULL) {
-      fprintf(stderr,"Error: Cannot write to output file, terminating.\n");
-      exit (EXIT_FAILURE);
+    fprintf(stderr, "Error: Cannot write to output file %s\n", filename);
+    return 0;
   }
-  assert(file);
-  fwrite((char*)in, 1, insize, file);
-  fclose(file);
+  if (fwrite((char*)in, 1, insize, file) != insize) {
+    fprintf(stderr, "Error: Failed to write output file %s\n", filename);
+    fclose(file);
+    return 0;
+  }
+  if (fclose(file) != 0) {
+    fprintf(stderr, "Error: Failed to write output file %s\n", filename);
+    return 0;
+  }
+  return 1;
 }
 
 /*
-outfilename: filename to write output to, or 0 to write to stdout instead
+outfilename: filename to write output to, or 0 to write to stdout instead.
+Returns 1 on success, 0 on failure (input unreadable or output not fully
+written).
 */
-static void CompressFile(const ZopfliOptions* options,
-                         ZopfliFormat output_type,
-                         const char* infilename,
-                         const char* outfilename) {
+static int CompressFile(const ZopfliOptions* options,
+                        ZopfliFormat output_type,
+                        const char* infilename,
+                        const char* outfilename) {
   uint8_t* in;
   size_t insize;
   uint8_t* out = 0;
   size_t outsize = 0;
+  int ok = 1;
   if (!LoadFile(infilename, &in, &insize)) {
     fprintf(stderr, "Invalid filename: %s\n", infilename);
-    return;
+    return 0;
   }
 
   ZopfliCompress(options, output_type, in, insize, &out, &outsize);
 
   if (outfilename) {
-    SaveFile(outfilename, out, outsize);
+    ok = SaveFile(outfilename, out, outsize);
   } else {
 #if _WIN32
     /* Windows workaround for stdout output. */
     _setmode(_fileno(stdout), _O_BINARY);
 #endif
-    fwrite(out, 1, outsize, stdout);
+    if (fwrite(out, 1, outsize, stdout) != outsize || fflush(stdout) != 0) {
+      fprintf(stderr, "Error: Failed to write output to stdout\n");
+      ok = 0;
+    }
   }
 
   /* out came from ZopfliCompress via options->zrealloc, so free it through the
@@ -154,6 +172,7 @@ static void CompressFile(const ZopfliOptions* options,
     free(out);
   }
   ZopfliRealloc(ZopfliDefaultContext(), in, 0);
+  return ok;
 }
 
 /*
@@ -176,6 +195,7 @@ int main(int argc, char* argv[]) {
   ZopfliFormat output_type = ZOPFLI_FORMAT_GZIP;
   const char* filename = 0;
   int output_to_stdout = 0;
+  int exit_status = EXIT_SUCCESS;
   int i;
 
   ZopfliInitOptions(&options);
@@ -192,7 +212,15 @@ int main(int argc, char* argv[]) {
     else if (StringsEqual(arg, "--splitlast"))  /* Ignore */;
     else if (arg[0] == '-' && arg[1] == '-' && arg[2] == 'i'
         && arg[3] >= '0' && arg[3] <= '9') {
-      options.numiterations = atoi(arg + 3);
+      char* end;
+      long value;
+      errno = 0;
+      value = strtol(arg + 3, &end, 10);
+      if (*end != '\0' || errno == ERANGE || value > INT_MAX) {
+        fprintf(stderr, "Error: invalid iteration count: %s\n", arg);
+        return EXIT_FAILURE;
+      }
+      options.numiterations = (int)value;
     }
     else if (StringsEqual(arg, "-h")) {
       fprintf(stderr,
@@ -213,11 +241,6 @@ int main(int argc, char* argv[]) {
     }
   }
 
-  if (options.numiterations < 0) {
-    fprintf(stderr, "Error: number of iterations must be 0 (auto) or more\n");
-    return 0;
-  }
-
   for (i = 1; i < argc; i++) {
     if (argv[i][0] != '-') {
       char* outfilename;
@@ -235,7 +258,9 @@ int main(int argc, char* argv[]) {
       if (options.verbose && outfilename) {
         fprintf(stderr, "Saving to: %s\n", outfilename);
       }
-      CompressFile(&options, output_type, filename, outfilename);
+      if (!CompressFile(&options, output_type, filename, outfilename)) {
+        exit_status = EXIT_FAILURE;
+      }
       ZopfliRealloc(ZopfliDefaultContext(), outfilename, 0);
     }
   }
@@ -243,7 +268,8 @@ int main(int argc, char* argv[]) {
   if (!filename) {
     fprintf(stderr,
             "Please provide filename\nFor help, type: %s -h\n", argv[0]);
+    exit_status = EXIT_FAILURE;
   }
 
-  return 0;
+  return exit_status;
 }
