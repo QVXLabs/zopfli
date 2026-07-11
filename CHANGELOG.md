@@ -5,6 +5,13 @@ All notable changes to this project are documented here. The format is based on
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). New
 changes go under a new top section as they land.
 
+## [Unreleased]
+
+### Changed
+- Build: the repo-root `VERSION` file is renamed `VERSION.txt`. A bare
+  `VERSION` shadows the C++ `<version>` header on case-insensitive
+  filesystems (macOS) when the repo root lands on an include path.
+
 ## [1.1.1] - 2026-07-02
 
 ### Fixed

@@ -1,8 +1,8 @@
 CC ?= gcc
 CXX ?= g++
 
-# Single source of truth: the repo-root VERSION file.
-VERSION := $(strip $(shell cat VERSION))
+# Single source of truth: the repo-root VERSION.txt file.
+VERSION := $(strip $(shell cat VERSION.txt))
 VERSION_MAJOR := $(word 1,$(subst ., ,$(VERSION)))
 
 # Shared-library naming differs by linker: GNU ld uses -soname and
@@ -35,7 +35,7 @@ LDLIBS := $(LDLIBS)
 GEN_HEADER := obj/version.h
 override CPPFLAGS := -Iobj $(CPPFLAGS)
 
-$(GEN_HEADER): src/zopfli/version.h.in VERSION
+$(GEN_HEADER): src/zopfli/version.h.in VERSION.txt
 	@mkdir -p obj
 	sed 's/@ZOPFLI_VERSION@/$(VERSION)/g' $< > $@
 
