@@ -1,10 +1,12 @@
 cmake_minimum_required(VERSION 3.10)
 
-# Single source of truth for the version: the repo-root VERSION file.
+# Single source of truth for the version: the repo-root VERSION.txt file.
+# (.txt because a bare VERSION shadows the C++ <version> header on
+# case-insensitive filesystems.)
 # CONFIGURE_DEPENDS re-runs CMake when it changes (file(READ) isn't auto-tracked).
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
-  ${CMAKE_CURRENT_SOURCE_DIR}/VERSION)
-file(READ "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" ZOPFLI_VERSION)
+  ${CMAKE_CURRENT_SOURCE_DIR}/VERSION.txt)
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/VERSION.txt" ZOPFLI_VERSION)
 string(STRIP "${ZOPFLI_VERSION}" ZOPFLI_VERSION)
 
 project(Zopfli VERSION ${ZOPFLI_VERSION} LANGUAGES C CXX)
