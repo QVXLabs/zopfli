@@ -5,6 +5,9 @@ on:
     branches: [master]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   build:
     name: ${{ matrix.compiler }} / ${{ matrix.build_type }}
@@ -75,3 +78,18 @@ jobs:
 
       - name: Test
         run: ctest --test-dir build --output-on-failure
+
+  ci:
+    # Single stable gate for branch protection: fails if any matrix leg or
+    # the sanitizer job fails, so the ruleset can require one context
+    # ("Linux CI") instead of every compiler/build_type combination.
+    name: Linux CI
+    needs: [build, sanitize]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Confirm all jobs passed
+        if: >-
+          ${{ needs.build.result != 'success'
+              || needs.sanitize.result != 'success' }}
+        run: exit 1
