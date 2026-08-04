@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   build:
-    name: ${{ matrix.build_type }}
+    name: Windows / ${{ matrix.build_type }}
     runs-on: windows-latest
     strategy:
       fail-fast: false
@@ -31,3 +31,16 @@ jobs:
 
       - name: Test
         run: ./build/${{ matrix.build_type }}/zopfli_tests.exe
+
+  ci:
+    # Single stable gate for branch protection (see linux.yml).
+    name: Windows CI
+    needs: [build]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Confirm all jobs passed
+        if: >-
+          ${{ contains(needs.*.result, 'failure')
+              || contains(needs.*.result, 'cancelled') }}
+        run: exit 1
