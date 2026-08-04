@@ -90,6 +90,6 @@ jobs:
     steps:
       - name: Confirm all jobs passed
         if: >-
-          ${{ contains(needs.*.result, 'failure')
-              || contains(needs.*.result, 'cancelled') }}
+          ${{ needs.build.result != 'success'
+              || needs.sanitize.result != 'success' }}
         run: exit 1

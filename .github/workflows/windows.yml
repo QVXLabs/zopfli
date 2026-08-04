@@ -40,7 +40,5 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Confirm all jobs passed
-        if: >-
-          ${{ contains(needs.*.result, 'failure')
-              || contains(needs.*.result, 'cancelled') }}
+        if: ${{ needs.build.result != 'success' }}
         run: exit 1
