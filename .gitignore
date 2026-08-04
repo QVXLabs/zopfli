@@ -1,0 +1,23 @@
+# Build output
+/obj/
+/build/
+/build-*/
+/cmake-build-*/
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+
+# Compiled binaries (built from source, not shipped)
+/zopfli
+/zopflipng
+
+# Editor / IDE
+/.idea/
+/.vscode/
+*.swp
+
+# macOS
+.DS_Store
