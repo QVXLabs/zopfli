@@ -34,8 +34,32 @@ TEST(RoundTrip, DeflateRawSizes) {
   }
 }
 
+// Several master blocks in one stream (google/zopfli#182 reported a
+// wrong-bytes deflate stream on large multi-block inputs; pin the behavior).
+// Mixed content so the blocks aren't degenerate copies of each other.
+TEST(RoundTrip, DeflateMultiMasterBlock) {
+  const size_t size = 2500000;  // 3 x 1 MB master blocks
+  std::vector<unsigned char> in = zopfli_test::PseudoRandom(size / 2);
+  in.reserve(size);
+  for (size_t i = in.size(); i < size; i++) {
+    in.push_back((unsigned char)("multi master block "[i % 19] + i / 100000));
+  }
+
+  ZopfliOptions options;
+  ZopfliInitOptions(&options);
+  options.numiterations = 1;  // round-trip correctness, not ratio
+
+  zopfli_test::Output out;
+  ZopfliCompress(&options, ZOPFLI_FORMAT_DEFLATE,
+                 in.data(), in.size(), out.out(), out.size_ptr());
+  EXPECT_EQ(zopfli_test::Inflate(out.bytes(), -15), in);
+}
+
 #else
 TEST(RoundTrip, DeflateRawSizes) { GTEST_SKIP() << "zlib not available"; }
+TEST(RoundTrip, DeflateMultiMasterBlock) {
+  GTEST_SKIP() << "zlib not available";
+}
 #endif
 
 }  // namespace

@@ -24,7 +24,8 @@ diverge (reorganize, rename, restructure) when it improves the codebase.
 - Public API is `Zopfli`-prefixed and declared in headers; internal helpers are
   `static`.
 - When you modify a source file that carries an `Author:` block, append:
-  `Author: afalls@qvxlabs.com (Ardy123)`
+  `Author: afalls@qvxlabs.com (QVXLabs)` (unless an afalls@qvxlabs.com line
+  is already present)
 
 ## Build & test
 - **Two build systems:**
