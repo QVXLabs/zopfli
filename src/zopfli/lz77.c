@@ -432,7 +432,13 @@ static const uint8_t* GetMatch(const uint8_t* scan,
     const uint8_t* mp = match - off;
     const unsigned lo = (unsigned)(off * CHAR_BIT);
     const unsigned hi = (unsigned)(ws * CHAR_BIT) - lo;
-    W acc = *(const W*)mp;
+    /* mp points up to off bytes before match, possibly before the buffer.
+    Only acc's high ws-off bytes survive the first (acc >> lo), so assemble
+    them from match itself and zero-fill the rest: identical results, every
+    load in bounds. */
+    W acc = 0;
+    uintptr_t k;
+    for (k = off; k < ws; ++k) acc |= (W)match[k - off] << (k * CHAR_BIT);
     for (; (uintptr_t)(end - scan) >= step + ws;
          mp += step, scan += step, match += step) {
       W n1 = *(const W*)(mp + ws);

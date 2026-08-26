@@ -38,6 +38,13 @@ option(ZOPFLI_COVERAGE "Build with coverage instrumentation" OFF)
 # so asserts stay live.
 option(ZOPFLI_SANITIZE "Build with ASan and UBSan" OFF)
 
+# The match-splice GetMatch path normally compiles only on non-x86 32/16-bit
+# little-endian targets (e.g. ARMv7), which CI has no runners for — so that
+# code would otherwise ship with zero test coverage. Forcing it on lets the
+# x86 ASan/UBSan job compile and memory-check it, catching splice-only bugs
+# in CI instead of on hardware.
+option(ZOPFLI_FORCE_SPLICE "Force the splice GetMatch path" OFF)
+
 # Default ON; gtest is run directly, so include(CTest) is intentionally unused.
 if(NOT DEFINED BUILD_TESTING)
   set(BUILD_TESTING ON)
@@ -54,6 +61,9 @@ endif()
 if(ZOPFLI_SANITIZE)
   add_compile_options(-fsanitize=address,undefined -fno-sanitize-recover=all)
   link_libraries(-fsanitize=address,undefined)
+endif()
+if(ZOPFLI_FORCE_SPLICE)
+  add_compile_definitions(ZOPFLI_FORCE_SPLICE)
 endif()
 
 include(GNUInstallDirs)

@@ -67,11 +67,14 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y zlib1g-dev
 
       - name: Configure
+        # FORCE_SPLICE: the ARM-only GetMatch splice path gets its only
+        # memory-checked coverage here.
         run: >
           cmake -S . -B build
           -DCMAKE_BUILD_TYPE=Debug
           -DBUILD_TESTING=ON
           -DZOPFLI_SANITIZE=ON
+          -DZOPFLI_FORCE_SPLICE=ON
 
       - name: Build
         run: cmake --build build -j
