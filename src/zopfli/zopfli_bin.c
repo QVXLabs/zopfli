@@ -101,7 +101,16 @@ static int LoadFile(const char* filename,
     *outsize += got;
     if (got == 0) break;
     if (*outsize == cap) {
-      cap = ZOPFLI_GROW_CAP(cap);
+      size_t newcap = ZOPFLI_GROW_CAP(cap);
+      /* A wrapped (shrunken) cap would send the next fread out of bounds. */
+      if (newcap <= cap) {
+        fprintf(stderr, "File too large to load into memory on this build.\n");
+        ZopfliRealloc(ZopfliDefaultContext(), data, 0);
+        *outsize = 0;
+        fclose(file);
+        return 0;
+      }
+      cap = newcap;
       data = (uint8_t*)ZopfliRealloc(ZopfliDefaultContext(), data, cap);
     }
   }
