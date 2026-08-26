@@ -429,20 +429,22 @@ static const uint8_t* GetMatch(const uint8_t* scan,
     /* match is misaligned by off: read aligned words from the match side and
     splice adjacent ones with the constant shift, carrying the high word as the
     accumulator so each iteration loads only the two new words. */
-    const uint8_t* mp = match - off;
+    /* First aligned word at or after match + 1: in bounds by construction,
+    unlike the word containing match's start, which could sit before the
+    buffer. */
+    const uint8_t* ma = match + (ws - off);
     const unsigned lo = (unsigned)(off * CHAR_BIT);
     const unsigned hi = (unsigned)(ws * CHAR_BIT) - lo;
-    /* mp points up to off bytes before match, possibly before the buffer.
-    Only acc's high ws-off bytes survive the first (acc >> lo), so assemble
-    them from match itself and zero-fill the rest: identical results, every
-    load in bounds. */
+    /* Only acc's high ws-off bytes survive the first (acc >> lo), so
+    assemble them from match itself and zero-fill the rest: identical
+    results, no load or pointer formed below the buffer start. */
     W acc = 0;
     uintptr_t k;
     for (k = off; k < ws; ++k) acc |= (W)match[k - off] << (k * CHAR_BIT);
     for (; (uintptr_t)(end - scan) >= step + ws;
-         mp += step, scan += step, match += step) {
-      W n1 = *(const W*)(mp + ws);
-      W n2 = *(const W*)(mp + step);
+         ma += step, scan += step, match += step) {
+      W n1 = *(const W*)ma;
+      W n2 = *(const W*)(ma + ws);
       if (*(const W*)scan != (W)((acc >> lo) | (n1 << hi))) break;
       if (*(const W*)(scan + ws) != (W)((n1 >> lo) | (n2 << hi))) break;
       acc = n2;
