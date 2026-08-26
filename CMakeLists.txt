@@ -63,7 +63,7 @@ if(ZOPFLI_SANITIZE)
   link_libraries(-fsanitize=address,undefined)
 endif()
 if(ZOPFLI_FORCE_SPLICE)
-  add_compile_definitions(ZOPFLI_FORCE_SPLICE)
+  add_definitions(-DZOPFLI_FORCE_SPLICE)
 endif()
 
 include(GNUInstallDirs)
