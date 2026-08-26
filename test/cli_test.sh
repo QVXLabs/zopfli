@@ -87,4 +87,65 @@ else
   echo "SKIP: /dev/full not available"
 fi
 
+# 8. Unknown options must be a hard error, not silently ignored
+# (google/zopfli#65: -i1000000 used to compress with default iterations).
+for badopt in -i1000000 --foo; do
+  if "$ZOPFLI" "$badopt" -c "$TMPDIR_T/in.txt" \
+      > "$TMPDIR_T/out8.gz" 2> "$TMPDIR_T/err8"; then
+    fail "$badopt accepted (exit 0)"
+  elif [ -s "$TMPDIR_T/out8.gz" ]; then
+    fail "$badopt rejected but output was written"
+  elif grep -q "unknown option" "$TMPDIR_T/err8"; then
+    pass "$badopt rejected with diagnostic"
+  else
+    fail "$badopt rejected without 'unknown option' diagnostic"
+  fi
+  rm -f "$TMPDIR_T/out8.gz"
+done
+
+# 9. Output not smaller than input prints a notice but still writes
+# (google/zopfli#168); a compressible input stays quiet.
+printf 'hi' > "$TMPDIR_T/tiny"
+if "$ZOPFLI" --i1 "$TMPDIR_T/tiny" 2> "$TMPDIR_T/err9" \
+    && [ -s "$TMPDIR_T/tiny.gz" ] \
+    && grep -q "not smaller than the input" "$TMPDIR_T/err9"; then
+  pass "expansion notice printed, file still written"
+else
+  fail "expansion notice missing, or file not written, or exit nonzero"
+fi
+if "$ZOPFLI" --i1 -c "$TMPDIR_T/in.txt" > /dev/null 2> "$TMPDIR_T/err9b" \
+    && ! grep -q "not smaller than the input" "$TMPDIR_T/err9b"; then
+  pass "no expansion notice for compressible input"
+else
+  fail "unexpected expansion notice (or failure) on compressible input"
+fi
+
+# 10. Seekable inputs that report size 0 must still be read to EOF
+# (google/zopfli#66 residual: /proc files, char devices). Linux only.
+if [ -r /proc/self/status ]; then
+  if "$ZOPFLI" --i1 -c /proc/self/status > "$TMPDIR_T/out10.gz" \
+      2> /dev/null && [ -s "$TMPDIR_T/out10.gz" ] \
+      && command -v gzip > /dev/null \
+      && [ "$(gzip -cd "$TMPDIR_T/out10.gz" | wc -c)" -gt 0 ]; then
+    pass "size-0-reporting input read to EOF"
+  else
+    fail "/proc/self/status compressed empty or failed"
+  fi
+else
+  echo "SKIP: /proc not available"
+fi
+
+# 11. Repo hygiene: no source file may carry the executable bit
+# (google/zopfli#199: katajainen.c was mode 100755).
+SRCDIR=$(dirname "$0")/../src/zopfli
+execs=""
+for f in "$SRCDIR"/*.c "$SRCDIR"/*.h; do
+  [ -x "$f" ] && execs="$execs $f"
+done
+if [ -n "$execs" ]; then
+  fail "executable bit set on:$execs"
+else
+  pass "no executable source files"
+fi
+
 exit $status

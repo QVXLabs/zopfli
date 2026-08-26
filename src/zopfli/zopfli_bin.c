@@ -15,6 +15,7 @@ limitations under the License.
 
 Author: lode.vandevenne@gmail.com (Lode Vandevenne)
 Author: jyrki.alakuijala@gmail.com (Jyrki Alakuijala)
+Author: afalls@qvxlabs.com (QVXLabs)
 */
 
 /*
@@ -64,6 +65,8 @@ static int LoadFile(const char* filename,
                     uint8_t** out, size_t* outsize) {
   FILE* file;
   long long filesize;
+  size_t cap;
+  uint8_t* data;
 
   *out = 0;
   *outsize = 0;
@@ -80,28 +83,45 @@ static int LoadFile(const char* filename,
   /* The whole file is loaded into memory, so it must fit in size_t (and be
   mallocable). On 64-bit builds that is effectively unbounded; on 32-bit builds
   it caps near 4 GB. */
-  if ((unsigned long long)filesize > (unsigned long long)SIZE_MAX) {
+  if ((unsigned long long)filesize >= (unsigned long long)SIZE_MAX) {
     fprintf(stderr, "File too large to load into memory on this build.\n");
     fclose(file);
     return 0;
   }
-  *outsize = (size_t)filesize;
 
-  *out = (uint8_t*)ZopfliRealloc(ZopfliDefaultContext(), NULL,
-                                 *outsize ? *outsize : 1);
-
-  if (*outsize) {
-    size_t testsize = fread(*out, 1, *outsize, file);
-    if (testsize != *outsize) {
-      /* It could be a directory */
-      ZopfliRealloc(ZopfliDefaultContext(), *out, 0);
-      *out = 0;
-      *outsize = 0;
-      fclose(file);
-      return 0;
+  /* ftell's size is only a hint: right for regular files, 0 for character
+  devices and procfs-style files whose size is unknowable from seek/tell.
+  Read until EOF (one byte of headroom avoids a growth cycle for the
+  exact-size case) so unsized inputs aren't silently loaded as empty; a
+  directory or I/O error surfaces via ferror. */
+  cap = (size_t)filesize + (filesize ? 1 : 65536);
+  data = (uint8_t*)ZopfliRealloc(ZopfliDefaultContext(), NULL, cap);
+  for (;;) {
+    size_t got = fread(data + *outsize, 1, cap - *outsize, file);
+    *outsize += got;
+    if (got == 0) break;
+    if (*outsize == cap) {
+      size_t newcap = ZOPFLI_GROW_CAP(cap);
+      /* A wrapped (shrunken) cap would send the next fread out of bounds. */
+      if (newcap <= cap) {
+        fprintf(stderr, "File too large to load into memory on this build.\n");
+        ZopfliRealloc(ZopfliDefaultContext(), data, 0);
+        *outsize = 0;
+        fclose(file);
+        return 0;
+      }
+      cap = newcap;
+      data = (uint8_t*)ZopfliRealloc(ZopfliDefaultContext(), data, cap);
     }
   }
+  if (ferror(file)) {
+    ZopfliRealloc(ZopfliDefaultContext(), data, 0);
+    *outsize = 0;
+    fclose(file);
+    return 0;
+  }
 
+  *out = data;
   fclose(file);
   return 1;
 }
@@ -150,6 +170,14 @@ static int CompressFile(const ZopfliOptions* options,
   }
 
   ZopfliCompress(options, output_type, in, insize, &out, &outsize);
+
+  if (outsize >= insize) {
+    /* Container + block overhead always expands tiny or incompressible
+    inputs; still write the file (gzip does the same), but say so. */
+    fprintf(stderr,
+            "Notice: %s: compressed output (%zu bytes) is not smaller than"
+            " the input (%zu bytes)\n", infilename, outsize, insize);
+  }
 
   if (outfilename) {
     ok = SaveFile(outfilename, out, outsize);
@@ -238,6 +266,13 @@ int main(int argc, char* argv[]) {
           "  --deflate     output to deflate format instead of gzip\n"
           "  --splitlast   ignored, left for backwards compatibility\n");
       return 0;
+    }
+    else if (arg[0] == '-') {
+      /* Anything else starting with '-' is a mistyped option (e.g. -i100 for
+      --i100); compressing with defaults anyway would hide the mistake. */
+      fprintf(stderr, "Error: unknown option: %s\nFor help, type: %s -h\n",
+              arg, argv[0]);
+      return EXIT_FAILURE;
     }
   }
 

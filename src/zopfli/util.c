@@ -54,6 +54,12 @@ const ZopfliContext* ZopfliDefaultContext(void) {
   return &kDefaultContext;
 }
 
+void ZopfliInitContext(const ZopfliOptions* options, ZopfliContext* ctx) {
+  ctx->options = *options;
+  ctx->options.zrealloc =
+      options->zrealloc ? options->zrealloc : ZopfliDefaultRealloc;
+}
+
 void* ZopfliRealloc(const ZopfliContext* ctx, void* ptr, size_t size) {
   /* ctx is never NULL; its options always name an allocator hook. */
   void* result;
