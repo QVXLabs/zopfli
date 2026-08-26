@@ -565,6 +565,11 @@ void ZopfliLZ77Optimal(ZopfliBlockState *s,
   int lastrandomstep = -1;
   int build_hash;
 
+  /* The public entry points map <= 0 to the auto default before getting here;
+  clamp anyway so a direct internal caller can never run zero iterations and
+  hand back an empty store. */
+  if (numiterations < 1) numiterations = 1;
+
   InitRanState(&ran_state);
   InitStats(&stats);
   ZopfliInitLZ77Store(in, &currentstore);

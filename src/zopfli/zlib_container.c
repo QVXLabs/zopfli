@@ -63,7 +63,7 @@ void ZopfliZlibCompress(const ZopfliOptions* options,
   ZopfliBuf buf;
   cmfflg += fcheck;
 
-  ctx.options = *options;
+  ZopfliInitContext(options, &ctx);
   buf.data = *out;
   buf.size = *outsize;
   buf.cap = *outsize;

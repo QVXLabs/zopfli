@@ -1027,24 +1027,6 @@ static void DeflatePart(const ZopfliContext* ctx, int btype, int final,
   ZopfliRealloc(ctx, splitpoints_uncompressed, 0);
 }
 
-/* Adopts (out, outsize) into a ZopfliBuf, runs f, then publishes back. The
-internal output path grows at the golden ratio; the public (out, outsize) API is
-preserved. */
-void ZopfliDeflatePart(const ZopfliOptions* options, int btype, int final,
-                       const uint8_t* in, size_t instart, size_t inend,
-                       uint8_t* bp, uint8_t** out,
-                       size_t* outsize) {
-  ZopfliContext ctx;
-  ZopfliBuf buf;
-  ctx.options = *options;
-  buf.data = *out;
-  buf.size = *outsize;
-  buf.cap = *outsize;
-  DeflatePart(&ctx, btype, final, in, instart, inend, bp, &buf);
-  *out = buf.data;
-  *outsize = buf.size;
-}
-
 /* Iteration count for auto mode (numiterations == 0): 10 + 12 per size-doubling
 above 1 KB, clamped to [15, 400]. Larger inputs have a longer tail of gains;
 runtime is size * iterations, so they are intentionally slow. */
@@ -1056,6 +1038,28 @@ static int AutoIterations(size_t insize) {
   return iters < 15 ? 15 : iters > 400 ? 400 : iters;
 }
 
+/* Adopts (out, outsize) into a ZopfliBuf, runs f, then publishes back. The
+internal output path grows at the golden ratio; the public (out, outsize) API is
+preserved. */
+void ZopfliDeflatePart(const ZopfliOptions* options, int btype, int final,
+                       const uint8_t* in, size_t instart, size_t inend,
+                       uint8_t* bp, uint8_t** out,
+                       size_t* outsize) {
+  ZopfliContext ctx;
+  ZopfliBuf buf;
+  ZopfliInitContext(options, &ctx);
+  /* <= 0 selects the auto default, as in ZopfliDeflateBuf; a non-positive
+  count would otherwise run zero squeeze iterations and emit empty blocks. */
+  if (ctx.options.numiterations <= 0)
+    ctx.options.numiterations = AutoIterations(inend - instart);
+  buf.data = *out;
+  buf.size = *outsize;
+  buf.cap = *outsize;
+  DeflatePart(&ctx, btype, final, in, instart, inend, bp, &buf);
+  *out = buf.data;
+  *outsize = buf.size;
+}
+
 /* Core deflate onto a golden-ratio-growing ZopfliBuf. The public ZopfliDeflate
 wraps this; the containers call it directly so the whole stream shares one buf
 (and its capacity) instead of crossing the (out, outsize) boundary per call. */
@@ -1064,7 +1068,7 @@ void ZopfliDeflateBuf(const ZopfliOptions* options, int btype, int final,
                       uint8_t* bp, ZopfliBuf* buf) {
   size_t offset = buf->size;
   ZopfliContext ctx;
-  ctx.options = *options;
+  ZopfliInitContext(options, &ctx);
   /* <= 0 selects the auto default; a negative count would otherwise run zero
   squeeze iterations and silently emit empty block bodies. */
   if (ctx.options.numiterations <= 0)

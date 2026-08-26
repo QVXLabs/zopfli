@@ -33,4 +33,9 @@ struct ZopfliContext {
   ZopfliOptions options;
 };
 
+/* Builds the per-compression context from caller options, installing the
+default allocator when zrealloc is NULL (the contract zopfli.h documents).
+Every public entry point must use this rather than copying options bare. */
+void ZopfliInitContext(const ZopfliOptions* options, ZopfliContext* ctx);
+
 #endif  /* ZOPFLI_CONTEXT_H_ */

@@ -78,4 +78,47 @@ TEST(CustomAllocator, DeflateByteIdenticalNoLeak) {
       std::string(5000, 'x') + std::string(5000, 'y')));
 }
 
+// zopfli.h documents that a NULL zrealloc falls back to the default
+// allocator. That must hold for every public entry point, not just
+// ZopfliCompress: each used to copy the options bare and call through the
+// NULL hook on the first allocation.
+TEST(CustomAllocator, NullZreallocFallsBackEverywhere) {
+  const std::vector<unsigned char> in = zopfli_test::Bytes(
+      std::string(3000, 'n') + "null zrealloc fallback");
+  ZopfliOptions options;
+  memset(&options, 0, sizeof(options));  // zrealloc == NULL, iterations == 0
+
+  {
+    unsigned char* out = nullptr;
+    size_t outsize = 0;
+    ZopfliGzipCompress(&options, in.data(), in.size(), &out, &outsize);
+    EXPECT_GT(outsize, 0u);
+    free(out);
+  }
+  {
+    unsigned char* out = nullptr;
+    size_t outsize = 0;
+    ZopfliZlibCompress(&options, in.data(), in.size(), &out, &outsize);
+    EXPECT_GT(outsize, 0u);
+    free(out);
+  }
+  {
+    unsigned char* out = nullptr;
+    size_t outsize = 0;
+    unsigned char bp = 0;
+    ZopfliDeflate(&options, 2, 1, in.data(), in.size(), &bp, &out, &outsize);
+    EXPECT_GT(outsize, 0u);
+    free(out);
+  }
+  {
+    unsigned char* out = nullptr;
+    size_t outsize = 0;
+    unsigned char bp = 0;
+    ZopfliDeflatePart(&options, 2, 1, in.data(), 0, in.size(), &bp,
+                      &out, &outsize);
+    EXPECT_GT(outsize, 0u);
+    free(out);
+  }
+}
+
 }  // namespace

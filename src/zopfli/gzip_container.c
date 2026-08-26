@@ -91,7 +91,7 @@ void ZopfliGzipCompress(const ZopfliOptions* options,
   ZopfliContext ctx;
   ZopfliBuf buf;
 
-  ctx.options = *options;
+  ZopfliInitContext(options, &ctx);
   buf.data = *out;
   buf.size = *outsize;
   buf.cap = *outsize;

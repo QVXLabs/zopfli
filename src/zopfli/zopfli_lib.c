@@ -19,21 +19,13 @@ Author: jyrki.alakuijala@gmail.com (Jyrki Alakuijala)
 
 #include "zopfli.h"
 
-#include "deflate.h"
-#include "util.h"
-
 #include <assert.h>
 
 void ZopfliCompress(const ZopfliOptions* options, ZopfliFormat output_type,
                     const uint8_t* in, size_t insize,
                     uint8_t** out, size_t* outsize) {
-  /* Ensure the allocator hook is set once, here, so the downstream code can call
-  it unconditionally. ZopfliInitOptions already installs it; this also covers a
-  caller who built ZopfliOptions without it. */
-  ZopfliOptions opts = *options;
-  if (!opts.zrealloc) opts.zrealloc = ZopfliDefaultRealloc;
-  options = &opts;
-
+  /* Every public entry point installs the default allocator via
+  ZopfliInitContext when zrealloc is NULL, so plain dispatch suffices here. */
   if (output_type == ZOPFLI_FORMAT_GZIP) {
     ZopfliGzipCompress(options, in, insize, out, outsize);
   } else if (output_type == ZOPFLI_FORMAT_ZLIB) {
