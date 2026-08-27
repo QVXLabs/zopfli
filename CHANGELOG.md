@@ -7,6 +7,8 @@ changes go under a new top section as they land.
 
 ## [Unreleased]
 
+## [1.1.2] - 2026-08-26
+
 ### Fixed
 Everything below came out of an audit of all 94 open upstream
 [google/zopfli issues](https://github.com/google/zopfli/issues) against
