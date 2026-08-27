@@ -7,6 +7,57 @@ changes go under a new top section as they land.
 
 ## [Unreleased]
 
+### Fixed
+Everything below came out of an audit of all 94 open upstream
+[google/zopfli issues](https://github.com/google/zopfli/issues) against
+this fork (see `docs/upstream-issues.md` for the full disposition); each
+entry cites the upstream report and the closed local tracker issue.
+- Library: `ZopfliDeflatePart` skipped the `numiterations <= 0` auto
+  fallback the other entry points apply, so `ZopfliInitOptions` defaults
+  ran zero squeeze iterations and emitted valid-looking blocks with empty
+  bodies — silent data loss ([google/zopfli#37], #23).
+- Library: a NULL `ZopfliOptions.zrealloc` is documented to fall back to
+  the default allocator but did so only in `ZopfliCompress`; every other
+  public entry point crashed through the NULL hook ([google/zopfli#44],
+  #24).
+- CLI: unrecognized options (e.g. `-i1000000` for `--i1000000`) were
+  silently ignored and compression ran with defaults; now a hard error
+  with a help hint and nonzero exit ([google/zopfli#65], #20).
+- CLI: seekable inputs that report size 0 (`/dev/urandom`, procfs files)
+  were compressed as empty archives with exit status 0; input is now read
+  to EOF, and the growth loop is guarded against 32-bit `size_t` wrap
+  ([google/zopfli#66], #25).
+- Internal: the splice match loop (non-x86 targets) formed and read a
+  pointer up to a word before the input buffer start — undefined
+  behavior, though unreachable with word-aligned allocators; output
+  bit-identical ([google/zopfli#22], #26).
+- Repo: `katajainen.c` dropped its executable bit
+  ([google/zopfli#199], #22).
+
+### Added
+- CLI: a notice on stderr when the compressed output is not smaller than
+  the input; the file is still written, matching gzip
+  ([google/zopfli#168], #21).
+- `ZOPFLI_FORCE_SPLICE` CMake option; the ASan/UBSan CI job uses it to
+  memory-check the splice match path, which otherwise only compiles on
+  targets CI has no runners for (#26).
+- `docs/upstream-issues.md`: the upstream issue audit.
+- Tests: CLI cases for unknown options, the expansion notice, unsized
+  inputs, and source-file permissions; API tests for `ZopfliDeflatePart`
+  iteration defaults, the append-to-existing-buffer contract
+  ([google/zopfli#13], #28), and NULL-`zrealloc` fallback; a 2.5 MB
+  multi-master-block round-trip ([google/zopfli#182], #27).
+
+[google/zopfli#13]: https://github.com/google/zopfli/issues/13
+[google/zopfli#22]: https://github.com/google/zopfli/issues/22
+[google/zopfli#37]: https://github.com/google/zopfli/issues/37
+[google/zopfli#44]: https://github.com/google/zopfli/issues/44
+[google/zopfli#65]: https://github.com/google/zopfli/issues/65
+[google/zopfli#66]: https://github.com/google/zopfli/issues/66
+[google/zopfli#168]: https://github.com/google/zopfli/issues/168
+[google/zopfli#182]: https://github.com/google/zopfli/issues/182
+[google/zopfli#199]: https://github.com/google/zopfli/issues/199
+
 ### Changed
 - Build: the repo-root `VERSION` file is renamed `VERSION.txt`. A bare
   `VERSION` shadows the C++ `<version>` header on case-insensitive
